@@ -101,24 +101,81 @@ services:
       context: ./nginx
       dockerfile: Dockerfile
     container_name: nickel-nginx
+    restart: unless-stopped
     ports:
-      - "8443:443"
-      - "8080:8080"
+      - "${NICKEL_HTTP_PORT:-8080}:80"
+      - "${NICKEL_HTTPS_PORT:-8443}:443"
+    environment:
+      DOMAIN: ${DOMAIN:-}
     volumes:
       - ./nginx/certs:/etc/nginx/certs:ro
+      - certbot_www:/var/www/certbot:ro
+      - certbot_conf:/etc/letsencrypt:ro
     depends_on:
       api:
         condition: service_healthy
       frontend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/nginx-health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/nginx-health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: nickel-certbot
+    profiles:
+      - certbot
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_conf:/etc/letsencrypt
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        trap exit TERM
+        while true; do
+          certbot renew --webroot -w /var/www/certbot --quiet || true
+          sleep 43200 &
+          wait $$!
+        done
+
+  certbot-issue:
+    image: certbot/certbot:latest
+    profiles:
+      - init-cert
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_conf:/etc/letsencrypt
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      EMAIL: ${EMAIL:-}
+      CERTBOT_STAGING: ${CERTBOT_STAGING:-0}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -e
+        if [ -z "$DOMAIN" ] || [ -z "$EMAIL" ]; then
+          echo "Set DOMAIN and EMAIL in .env" >&2
+          exit 1
+        fi
+        STAGING=""
+        if [ "$CERTBOT_STAGING" = "1" ] || [ "$CERTBOT_STAGING" = "true" ]; then
+          STAGING="--staging"
+        fi
+        exec certbot certonly --webroot -w /var/www/certbot \
+          -d "$DOMAIN" --email "$EMAIL" \
+          --agree-tos --no-eff-email --non-interactive $$STAGING
 
 volumes:
   neo4j_data:
   neo4j_logs:
   qdrant_data:
   api_data:
+  certbot_www:
+  certbot_conf:
