@@ -12,7 +12,7 @@ from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharac
 ALLOWED_NODE_TYPES = [
     "Material", "Equipment", "Process", "Parameter", "Metric", 
     "Property", "Facility", "Expert", "Regulation", "Publication",
-    "Location", "Organization", "Document", "Concept"
+    "Geography", "Document", "Concept"
 ]
 
 ALLOWED_RELATIONS = [
@@ -60,7 +60,7 @@ class OllamaAPI:
                 "   ХОРОШО: 'economic analysis' (и отдельная тройка для 'added value').\n"
                 "2. Если в предложении много информации, разбей его на несколько независимых, простых троек.\n"
                 "3. АББРЕВИАТУРЫ: ЗАПРЕЩЕНО использовать нерасшифрованные аббревиатуры для компаний или локаций (разворачивай 'NC' в 'New Caledonia', 'KNS' в 'Koniambo Nickel SAS'). ИСКЛЮЧЕНИЕ: Общепринятые химические элементы (Ni, Co, Fe). Для них, чтобы сохранить смысл, используй формат 'Символ (Полное название)', например: 'Ni (Nickel)'.\n"
-                "4. ИЗВЛЕКАЙ ВСЕ ВОЗМОЖНЫЕ ФАКТЫ (Exhaustive Extraction). Не резюмируй текст! Твоя задача вытащить каждую малейшую деталь, каждую связь между сущностями.\n"
+                "4. ИЗВЛЕКАЙ ТОЛЬКО ЗНАЧИМЫЕ ФАКТЫ: Фокусируйся на знаниях предметной области (металлургия, география, процессы, компании). ИГНОРИРУЙ оглавления (содержание), копирайты, списки литературы и 'воду'. Не создавай 'тройки ради троек', если в них нет фактического смысла. Если текст не содержит полезных фактов (например, это оглавление), просто верни пустой список троек `[]`.\n"
                 "5. Используй строго те типы связей и узлов, что разрешены схемой. Если ни одна связь идеально не подходит, используй 'related_to'.\n\n"
                 "РАЗРЕШЕННЫЕ ТИПЫ УЗЛОВ (subject_type, object_type):\n"
                 "Material, Equipment, Process, Parameter, Metric, Property, Facility, Expert, Regulation, Publication, Location, Organization, Document, Concept\n\n"
