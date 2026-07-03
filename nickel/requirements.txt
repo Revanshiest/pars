@@ -1,0 +1,5 @@
+langchain-text-splitters
+pydantic
+langchain-core
+langchain-ollama
+pymupdf4llm

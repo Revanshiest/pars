@@ -1,0 +1,186 @@
+{
+  "triples": [
+    {
+      "subject": "Aurélien Louis",
+      "subject_type": "Expert",
+      "relation": "related_to",
+      "object": "Nickel Conference",
+      "object_type": "Document"
+    },
+    {
+      "subject": "Jean‑Sébastien Baille",
+      "subject_type": "Expert",
+      "relation": "related_to",
+      "object": "Nickel Conference",
+      "object_type": "Document"
+    },
+    {
+      "subject": "Nickel Conference",
+      "subject_type": "Document",
+      "relation": "located_in",
+      "object": "Nouméa",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Jules Garnier",
+      "subject_type": "Expert",
+      "relation": "related_to",
+      "object": "Nickel",
+      "object_type": "Material"
+    },
+    {
+      "subject": "First mine",
+      "subject_type": "Facility",
+      "relation": "located_in",
+      "object": "Mont Dore",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Mont Dore",
+      "subject_type": "Location",
+      "relation": "part_of",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Doniambo factory",
+      "subject_type": "Facility",
+      "relation": "produces_output",
+      "object": "Nickel",
+      "object_type": "Material"
+    },
+    {
+      "subject": "Doniambo factory",
+      "subject_type": "Facility",
+      "relation": "located_in",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Posco",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "nickel projects",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "SLN",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "local ownership development policy",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "SMSP",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "local ownership development policy",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Mining industry",
+      "subject_type": "Concept",
+      "relation": "located_in",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "first mine",
+      "subject_type": "Facility",
+      "relation": "located_in",
+      "object": "Mont Dore",
+      "object_type": "Location"
+    },
+    {
+      "subject": "nickel industry",
+      "subject_type": "Concept",
+      "relation": "located_in",
+      "object": "New-Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "nickel industry",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "development",
+      "object_type": "Property"
+    },
+    {
+      "subject": "industrial policy",
+      "subject_type": "Concept",
+      "relation": "located_in",
+      "object": "New-Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "mining law",
+      "subject_type": "Document",
+      "relation": "located_in",
+      "object": "New-Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "nickel resources inventory",
+      "subject_type": "Document",
+      "relation": "related_to",
+      "object": "nickel industry",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Goro project",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "New Caledonia mining industry",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Goro project",
+      "subject_type": "Concept",
+      "relation": "part_of",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "acid leak",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "Goro project",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "SX column",
+      "subject_type": "Equipment",
+      "relation": "related_to",
+      "object": "Goro project",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "acid plant",
+      "subject_type": "Equipment",
+      "relation": "related_to",
+      "object": "Goro project",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "limonite resources",
+      "subject_type": "Material",
+      "relation": "located_in",
+      "object": "South",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Goro project",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "construction budget",
+      "object_type": "Property"
+    },
+    {
+      "subject": "public participation",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "Goro project",
+      "object_type": "Concept"
+    }
+  ]
+}
