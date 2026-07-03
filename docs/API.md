@@ -16,16 +16,24 @@ Base URL: `http://localhost:8000` (Docker: порт `8000`, HTTPS через ngi
 
 ### Bootstrap
 
+Admin задаётся в `.env`:
+
 ```
-POST /api/v1/auth/setup
+AUTH_ADMIN=admin@org.local|Admin|your-api-key-min-16-chars
+```
+
+При старте API пользователь создаётся/синхронизируется автоматически. Остальных пользователей создаёт admin через `/admin/` или API ниже.
+
+```
+POST /api/v1/auth/setup          (только без AUTH_ADMIN, dev)
 {"email": "admin@org.local", "name": "Admin", "api_key": "optional-min-16-chars"}
 
 POST /api/v1/auth/token
 {"api_key": "..."}
 → {"access_token": "...", "token_type": "bearer", "expires_in": 86400}
 
-GET  /api/v1/auth/status
-GET  /api/v1/auth/me          (auth required)
+GET  /api/v1/auth/status         → setup_required, admin_from_env, env_admin_email
+GET  /api/v1/auth/me             (auth required)
 ```
 
 ---

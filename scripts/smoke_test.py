@@ -13,6 +13,10 @@ sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("SKIP_OLLAMA_HEALTH", "true")
 os.environ.setdefault("JWT_SECRET", "test-secret-key-minimum-32-characters!!")
+os.environ.setdefault(
+    "AUTH_ADMIN",
+    "smoke@test.local|Smoke|smoke-test-key-minimum-16-chars!",
+)
 
 fd, db_path = tempfile.mkstemp(suffix=".db")
 os.close(fd)
@@ -71,9 +75,10 @@ r = client.get("/api/v1/ontology")
 check("GET /ontology", r.status_code == 200 and "node_types" in r.json(), r.text)
 
 # Auth bootstrap
-r = client.post("/api/v1/auth/setup", json={"email": "smoke@test.local", "name": "Smoke"})
-check("POST /auth/setup", r.status_code == 200, r.text)
-api_key = r.json().get("api_key", "")
+from services.auth_bootstrap import bootstrap_admin_from_env
+
+bootstrap_admin_from_env()
+api_key = "smoke-test-key-minimum-16-chars!"
 
 r = client.post("/api/v1/auth/token", json={"api_key": api_key})
 check("POST /auth/token", r.status_code == 200 and "access_token" in r.json(), r.text)

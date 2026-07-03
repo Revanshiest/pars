@@ -8,6 +8,7 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': { target: 'http://localhost:8000', changeOrigin: true },
+      '/admin': { target: 'http://localhost:8000', changeOrigin: true },
       '/health': { target: 'http://localhost:8000', changeOrigin: true },
       '/live': { target: 'http://localhost:8000', changeOrigin: true },
       '/ready': { target: 'http://localhost:8000', changeOrigin: true },

@@ -8,6 +8,9 @@ import tempfile
 import pytest
 
 
+AUTH_TEST_KEY = "test-admin-key-minimum-16-chars!!"
+
+
 @pytest.fixture()
 def tmp_platform_db(monkeypatch):
     fd, path = tempfile.mkstemp(suffix=".db")
@@ -15,6 +18,7 @@ def tmp_platform_db(monkeypatch):
     monkeypatch.setenv("PLATFORM_DB", path)
     monkeypatch.setenv("JWT_SECRET", "test-secret-key-minimum-32-characters!!")
     monkeypatch.setenv("SKIP_OLLAMA_HEALTH", "true")
+    monkeypatch.setenv("AUTH_ADMIN", f"admin@test.local|Admin|{AUTH_TEST_KEY}")
 
     import services.store as store_mod
 

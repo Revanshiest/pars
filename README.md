@@ -28,7 +28,7 @@ docker compose up -d --build  # Neo4j + Qdrant + API + UI + nginx
 |-----|------------|
 | http://localhost:8080 | **Web UI** (обработка, поиск) |
 | http://localhost:8000/docs | Swagger API |
-| http://localhost:8080/admin/ | Первый admin + API-key |
+| http://localhost:8080/admin/ | Управление пользователями (вход ключом из AUTH_ADMIN) |
 
 **Пайплайн через UI:** положите PDF в `data/inbox/` → UI «Обработка» → путь `data/inbox` → «Запустить».
 
@@ -110,9 +110,10 @@ python cli.py mvp FILE           # legacy: только LLM extraction
 
 ## Аутентификация
 
-1. Admin: `/admin/` или `POST /api/v1/auth/setup`
-2. JWT: `POST /api/v1/auth/token` + `Authorization: Bearer …`
-3. Или заголовок `X-API-Key`
+1. **Admin** — в `.env`: `AUTH_ADMIN=email|name|api_key` (ключ мин. 16 символов). При старте API создаётся/синхронизируется автоматически.
+2. **Остальные пользователи** — admin создаёт в `/admin/` (researcher, analyst, project_manager, external_partner).
+3. JWT: `POST /api/v1/auth/token` + `Authorization: Bearer …`
+4. Или заголовок `X-API-Key`
 
 | Роль | Права |
 |------|-------|

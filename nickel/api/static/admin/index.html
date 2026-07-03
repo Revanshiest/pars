@@ -91,26 +91,8 @@
 <body>
   <div class="wrap">
     <h1>Управление пользователями</h1>
-    <p class="sub">RBAC хранится в SQLite. API-ключ передаётся в заголовке <code>X-API-Key</code>.</p>
+    <p class="sub">Администратор задаётся в <code>AUTH_ADMIN</code> (.env). Остальных пользователей создавайте здесь.</p>
     <div id="message"></div>
-
-    <div id="setup-panel" class="card hidden">
-      <h2>Первоначальная настройка</h2>
-      <p style="color:var(--muted);margin-top:0">В базе нет пользователей. Создайте первого администратора.</p>
-      <div class="row">
-        <div>
-          <label>Email</label>
-          <input id="setup-email" type="email" placeholder="admin@company.ru">
-        </div>
-        <div>
-          <label>Имя</label>
-          <input id="setup-name" type="text" placeholder="Administrator">
-        </div>
-      </div>
-      <label>API-ключ (необязательно, сгенерируется автоматически)</label>
-      <input id="setup-key" type="text" placeholder="минимум 16 символов">
-      <button class="btn-primary" onclick="setupFirstAdmin()">Создать admin</button>
-    </div>
 
     <div id="login-panel" class="card hidden">
       <h2>Вход</h2>
@@ -178,6 +160,7 @@
   <script>
     const API = "/api/v1";
     let apiKey = localStorage.getItem("nickel_api_key") || "";
+    let authStatus = {};
 
     function showMsg(text, type = "info") {
       const el = document.getElementById("message");
@@ -198,42 +181,25 @@
 
     async function init() {
       try {
-        const status = await fetch(API + "/auth/status").then(r => r.json());
-        if (status.setup_required) {
-          document.getElementById("setup-panel").classList.remove("hidden");
+        authStatus = await fetch(API + "/auth/status").then(r => r.json());
+        if (authStatus.setup_required) {
+          const hint = authStatus.admin_from_env
+            ? "Admin из AUTH_ADMIN не создан — проверьте формат и перезапустите API."
+            : "Задайте <code>AUTH_ADMIN=email|name|api_key</code> в .env и перезапустите API.";
+          showMsg(hint, "err");
           return;
         }
         if (!apiKey) {
           document.getElementById("login-panel").classList.remove("hidden");
+          if (authStatus.admin_from_env) {
+            showMsg(
+              "Вход API-ключом из AUTH_ADMIN" +
+              (authStatus.env_admin_email ? " (" + authStatus.env_admin_email + ")" : ""),
+              "info"
+            );
+          }
           return;
         }
-        await loadAdmin();
-      } catch (e) {
-        showMsg(e.message, "err");
-      }
-    }
-
-    async function setupFirstAdmin() {
-      try {
-        const body = {
-          email: document.getElementById("setup-email").value,
-          name: document.getElementById("setup-name").value,
-        };
-        const key = document.getElementById("setup-key").value.trim();
-        if (key) body.api_key = key;
-        const res = await fetch(API + "/auth/setup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        }).then(r => r.json());
-        if (res.detail) throw new Error(res.detail);
-        apiKey = res.api_key;
-        localStorage.setItem("nickel_api_key", apiKey);
-        showMsg(
-          "Admin создан. Сохраните ключ:<div class='key-box'>" + res.api_key + "</div>",
-          "ok"
-        );
-        document.getElementById("setup-panel").classList.add("hidden");
         await loadAdmin();
       } catch (e) {
         showMsg(e.message, "err");
@@ -282,25 +248,30 @@
 
     async function refreshUsers() {
       const data = await api("/admin/users");
+      const rolesData = await api("/admin/roles");
+      const assignable = rolesData.roles.map(r => r.role);
+      const envEmail = authStatus.env_admin_email;
       const tbody = document.getElementById("users-body");
-      tbody.innerHTML = data.users.map(u => `
+      tbody.innerHTML = data.users.map(u => {
+        const isEnvAdmin = envEmail && u.email === envEmail;
+        const roleOptions = isEnvAdmin
+          ? `<span class="badge">admin</span> <span style="color:var(--muted);font-size:0.75rem">(.env)</span>`
+          : `<select onchange="changeRole('${u.id}', this.value)">` +
+            assignable.map(r => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${r}</option>`).join('') +
+            `</select>`;
+        const actions = isEnvAdmin
+          ? `<span style="color:var(--muted);font-size:0.8rem">ключ из AUTH_ADMIN</span>`
+          : `<button class="btn-secondary btn-sm" onclick="rotateKey('${u.id}')">Новый ключ</button>
+             <button class="btn-danger btn-sm" onclick="deleteUser('${u.id}', '${u.email}')">Удалить</button>`;
+        return `
         <tr>
           <td>${u.email}</td>
           <td>${u.name}</td>
-          <td>
-            <select onchange="changeRole('${u.id}', this.value)" ${u.role === 'admin' ? '' : ''}>
-              ${['researcher','analyst','project_manager','admin','external_partner'].map(r =>
-                `<option value="${r}" ${r === u.role ? 'selected' : ''}>${r}</option>`
-              ).join('')}
-            </select>
-          </td>
+          <td>${roleOptions}</td>
           <td>${u.key_hint || '—'}</td>
-          <td class="actions">
-            <button class="btn-secondary btn-sm" onclick="rotateKey('${u.id}')">Новый ключ</button>
-            <button class="btn-danger btn-sm" onclick="deleteUser('${u.id}', '${u.email}')">Удалить</button>
-          </td>
-        </tr>
-      `).join("");
+          <td class="actions">${actions}</td>
+        </tr>`;
+      }).join("");
     }
 
     async function createUser() {

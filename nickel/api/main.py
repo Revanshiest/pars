@@ -35,6 +35,7 @@ from ontology.schema import NODE_TYPES, RELATIONS
 from services.neo4j_loader import Neo4jLoader
 from services.qdrant_index import QdrantIndexer
 from services.pipeline_runner import run_full_pipeline
+from services.auth_bootstrap import bootstrap_admin_from_env, env_admin_spec
 from services.store import get_store
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "data/uploads")
@@ -52,9 +53,18 @@ async def lifespan(app: FastAPI):
 
     store = get_store()
     store.seed_glossary_from_file(ONTOLOGY_DIR / "glossary_seed.json")
+
+    try:
+        bootstrap_admin_from_env()
+    except ValueError as exc:
+        print(f"Auth: invalid AUTH_ADMIN — {exc}")
+
     auth_status = store.auth_status()
-    if auth_status["setup_required"]:
-        print("Auth: no users in DB — open http://localhost:8000/admin/ to create first admin")
+    spec = env_admin_spec()
+    if spec:
+        print(f"Auth: admin from .env ({spec['email']}); other users via /admin/")
+    elif auth_status["setup_required"]:
+        print("Auth: set AUTH_ADMIN=email|name|api_key in .env (or POST /api/v1/auth/setup for dev)")
     else:
         print(f"Auth: {auth_status['users_count']} users in SQLite (manage via /admin/)")
 

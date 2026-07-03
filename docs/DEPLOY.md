@@ -24,16 +24,16 @@ docker compose up -d --build
 
 ## Первый пользователь
 
-1. http://localhost:8080/admin/ → создать admin → **сохранить API-key**
-2. http://localhost:8080 → войти по ключу
+1. В `.env` задайте admin:
+   ```
+   AUTH_ADMIN=admin@company.ru|Administrator|your-secret-api-key-min-16-chars
+   ```
+2. Перезапустите API (`docker compose up -d --build` или `python cli.py serve`)
+3. http://localhost:8080/admin/ → войти ключом из `AUTH_ADMIN`
+4. Создайте остальных пользователей в админке
+5. http://localhost:8080 → войти по ключу любого пользователя
 
-Или без UI:
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/setup \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@local","name":"Admin"}'
-```
+`POST /api/v1/auth/setup` доступен только если `AUTH_ADMIN` **не** задан (режим разработки).
 
 ## TLS
 

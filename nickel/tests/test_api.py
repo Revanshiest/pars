@@ -30,14 +30,11 @@ def test_ontology_public(client):
     assert "relations" in data
 
 
-def test_auth_setup_and_token(client, tmp_platform_db):
-    r = client.post(
-        "/api/v1/auth/setup",
-        json={"email": "jury@test.local", "name": "Jury"},
-    )
-    assert r.status_code == 200
-    api_key = r.json()["api_key"]
-    assert len(api_key) >= 32
+def test_auth_env_admin_and_token(client, tmp_platform_db):
+    from services.auth_bootstrap import bootstrap_admin_from_env
+
+    bootstrap_admin_from_env()
+    api_key = os.environ["AUTH_ADMIN"].split("|")[2]
 
     r2 = client.post("/api/v1/auth/token", json={"api_key": api_key})
     assert r2.status_code == 200
@@ -45,7 +42,16 @@ def test_auth_setup_and_token(client, tmp_platform_db):
 
     r3 = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert r3.status_code == 200
-    assert r3.json()["email"] == "jury@test.local"
+    assert r3.json()["email"] == "admin@test.local"
+    assert r3.json()["role"] == "admin"
+
+
+def test_auth_setup_blocked_when_env_admin(client, tmp_platform_db):
+    r = client.post(
+        "/api/v1/auth/setup",
+        json={"email": "other@test.local", "name": "Other"},
+    )
+    assert r.status_code == 403
 
 
 def test_health_endpoint(client):

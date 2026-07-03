@@ -318,6 +318,20 @@ class PlatformStore:
             )
         return key
 
+    def set_api_key(self, user_id: str, api_key: str) -> None:
+        key = api_key.strip()
+        if len(key) < 16:
+            raise ValueError("API key must be at least 16 characters")
+        now = self._now()
+        with self._lock, self._connect() as conn:
+            if not conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone():
+                raise ValueError("User not found")
+            conn.execute("DELETE FROM api_keys WHERE user_id=?", (user_id,))
+            conn.execute(
+                "INSERT INTO api_keys (key, user_id, created_at, expires_at) VALUES (?,?,?,?)",
+                (key, user_id, now, self._api_key_expires_at()),
+            )
+
     def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         with self._connect() as conn:
             row = conn.execute(
@@ -353,9 +367,14 @@ class PlatformStore:
         ]
 
     def auth_status(self) -> Dict[str, Any]:
+        from services.auth_bootstrap import env_admin_spec
+
+        spec = env_admin_spec()
         count = self.count_users()
         return {
             "setup_required": count == 0,
+            "admin_from_env": spec is not None,
+            "env_admin_email": spec["email"] if spec else None,
             "users_count": count,
             "roles": ROLES,
         }

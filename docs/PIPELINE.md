@@ -72,11 +72,7 @@ python cli.py mvp document.pdf
 ## Способ 2: API — один файл
 
 ```bash
-# 1. Получить API-key (первый admin через /admin/ или setup)
-curl -X POST http://localhost:8000/api/v1/auth/setup \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@org.local","name":"Admin"}'
-
+# 1. API-key admin из AUTH_ADMIN в .env (после старта API)
 # 2. Загрузить файл (фоновая задача)
 curl -X POST "http://localhost:8000/api/v1/documents/upload?extractor=auto" \
   -H "X-API-Key: YOUR_KEY" \

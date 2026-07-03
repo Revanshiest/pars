@@ -19,7 +19,8 @@ from services.analytics import (
 from services.export_service import export_jsonld, export_markdown, export_pdf, save_export
 from services.graph_editor import add_triple, delete_triple, list_edits, update_triple
 from services.search_filters import compare_practices, filtered_search
-from services.store import get_store
+from services.auth_bootstrap import assignable_roles, env_admin_spec, is_env_admin_email
+from services.store import ROLE_PERMISSIONS, get_store
 
 router = APIRouter(prefix="/api/v1", tags=["platform"])
 
@@ -485,6 +486,8 @@ async def auth_status():
 
 @router.post("/auth/setup")
 async def auth_setup(body: FirstAdminSetup):
+    if env_admin_spec():
+        raise HTTPException(403, "Admin is configured via AUTH_ADMIN in .env")
     store = get_store()
     if store.count_users() > 0:
         raise HTTPException(403, "Setup already completed. Use /admin to manage users.")
@@ -560,7 +563,8 @@ async def list_documents(
 async def admin_list_roles(user=Depends(get_current_user)):
     from api.auth import require_admin
     require_admin(user)
-    return {"roles": get_store().list_roles()}
+    roles = assignable_roles()
+    return {"roles": [{"role": r, "permissions": ROLE_PERMISSIONS[r]} for r in roles]}
 
 
 @router.get("/admin/users")
@@ -575,6 +579,10 @@ async def admin_list_users(user=Depends(get_current_user)):
 async def admin_create_user(body: UserCreate, user=Depends(get_current_user)):
     from api.auth import require_admin
     require_admin(user)
+    if body.role == "admin":
+        raise HTTPException(403, "Admin role is only via AUTH_ADMIN in .env")
+    if body.role not in assignable_roles():
+        raise HTTPException(400, f"Invalid role: {body.role}")
     store = get_store()
     try:
         created = store.create_user(body.email, body.name, body.role, api_key=body.api_key)
@@ -592,6 +600,16 @@ async def admin_update_user(user_id: str, body: UserUpdate, user=Depends(get_cur
     from api.auth import require_admin
     require_admin(user)
     store = get_store()
+    target = store.get_user(user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+    if is_env_admin_email(target["email"]):
+        if body.role and body.role != "admin":
+            raise HTTPException(403, "Cannot change env admin role")
+        if body.email and body.email.strip().lower() != target["email"]:
+            raise HTTPException(403, "Cannot change env admin email")
+    if body.role == "admin" and env_admin_spec():
+        raise HTTPException(403, "Admin role is only via AUTH_ADMIN in .env")
     try:
         updated = store.update_user(
             user_id,
@@ -614,6 +632,9 @@ async def admin_delete_user(user_id: str, user=Depends(get_current_user)):
     if user_id == user["id"]:
         raise HTTPException(400, "Cannot delete your own account")
     store = get_store()
+    target = store.get_user(user_id)
+    if target and is_env_admin_email(target["email"]):
+        raise HTTPException(403, "Cannot delete env admin")
     try:
         ok = store.delete_user(user_id)
     except ValueError as e:
@@ -628,7 +649,11 @@ async def admin_delete_user(user_id: str, user=Depends(get_current_user)):
 async def admin_rotate_key(user_id: str, user=Depends(get_current_user)):
     from api.auth import require_admin
     require_admin(user)
-    new_key = get_store().rotate_api_key(user_id)
+    store = get_store()
+    target = store.get_user(user_id)
+    if target and is_env_admin_email(target["email"]):
+        raise HTTPException(403, "Env admin API key is synced from AUTH_ADMIN on restart")
+    new_key = store.rotate_api_key(user_id)
     if not new_key:
         raise HTTPException(404, "User not found")
     audit_action(user, "admin.rotate_key", user_id)
