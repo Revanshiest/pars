@@ -8,26 +8,28 @@ from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharac
 # 1. Онтология предметной области (Pydantic схемы для Structured Output)
 # =====================================================================
 
-# Допустимые типы сущностей (Nodes)
-EntityType = Literal[
-    "Material", "Process", "Equipment", "Property", 
-    "Experiment", "Publication", "Expert", "Facility",
+# Разрешенные типы для подсказки модели
+ALLOWED_NODE_TYPES = [
+    "Material", "Equipment", "Process", "Parameter", "Metric", 
+    "Property", "Facility", "Expert", "Regulation", "Publication",
     "Location", "Organization", "Document", "Concept"
 ]
 
-# Допустимые типы связей (Edges)
-RelationType = Literal[
+ALLOWED_RELATIONS = [
     "uses_material", "operates_at_condition", "produces_output", 
     "described_in", "validated_by", "contradicts",
     "located_in", "has_property", "part_of", "managed_by", "related_to"
 ]
 
+NodeType = str
+RelationType = str
+
 class Triple(BaseModel):
     subject: str = Field(description="Имя субъекта (исходного узла)")
-    subject_type: EntityType = Field(description="Тип субъекта из онтологии")
+    subject_type: NodeType = Field(description="Тип субъекта из онтологии")
     relation: RelationType = Field(description="Тип связи из онтологии")
     object: str = Field(description="Имя объекта (целевого узла)")
-    object_type: EntityType = Field(description="Тип объекта из онтологии")
+    object_type: NodeType = Field(description="Тип объекта из онтологии")
 
 class ExtractionResult(BaseModel):
     triples: List[Triple] = Field(description="Список извлеченных троек (фактов)")
@@ -59,7 +61,11 @@ class OllamaAPI:
                 "2. Если в предложении много информации, разбей его на несколько независимых, простых троек.\n"
                 "3. АББРЕВИАТУРЫ: ЗАПРЕЩЕНО использовать нерасшифрованные аббревиатуры для компаний или локаций (разворачивай 'NC' в 'New Caledonia', 'KNS' в 'Koniambo Nickel SAS'). ИСКЛЮЧЕНИЕ: Общепринятые химические элементы (Ni, Co, Fe). Для них, чтобы сохранить смысл, используй формат 'Символ (Полное название)', например: 'Ni (Nickel)'.\n"
                 "4. ИЗВЛЕКАЙ ВСЕ ВОЗМОЖНЫЕ ФАКТЫ (Exhaustive Extraction). Не резюмируй текст! Твоя задача вытащить каждую малейшую деталь, каждую связь между сущностями.\n"
-                "5. Используй строго те типы связей и узлов, что разрешены схемой.\n\n"
+                "5. Используй строго те типы связей и узлов, что разрешены схемой. Если ни одна связь идеально не подходит, используй 'related_to'.\n\n"
+                "РАЗРЕШЕННЫЕ ТИПЫ УЗЛОВ (subject_type, object_type):\n"
+                "Material, Equipment, Process, Parameter, Metric, Property, Facility, Expert, Regulation, Publication, Location, Organization, Document, Concept\n\n"
+                "РАЗРЕШЕННЫЕ ТИПЫ СВЯЗЕЙ (relation):\n"
+                "uses_material, operates_at_condition, produces_output, described_in, validated_by, contradicts, located_in, has_property, part_of, managed_by, related_to\n\n"
                 "ОБЯЗАТЕЛЬНЫЕ ИНСТРУКЦИИ ПО ФОРМАТУ ВЫВОДА:\n{format_instructions}\n\n"
                 "Контекст документа (где находится текст): {meta_context}\n"
                 "Текст для анализа:\n{text}\n\n"
@@ -74,15 +80,28 @@ class OllamaAPI:
 
     async def extract_triples(self, text: str, meta_context: str) -> ExtractionResult:
         try:
-            # Асинхронный вызов цепочки (через ainvoke)
+            # Асинхронный вызов цепочки (теперь парсер не падает на галлюцинациях)
             result_dict = await self.chain.ainvoke({
                 "text": text,
                 "meta_context": meta_context
             })
-            # Валидация Pydantic (если модель нагаллюцинировала типы, здесь будет ошибка)
-            return ExtractionResult(**result_dict)
+            
+            valid_triples = []
+            for t in result_dict.get("triples", []):
+                rel = t.get("relation")
+                subj_type = t.get("subject_type")
+                obj_type = t.get("object_type")
+                
+                # Строгая проверка на соответствие схеме
+                if rel in ALLOWED_RELATIONS and subj_type in ALLOWED_NODE_TYPES and obj_type in ALLOWED_NODE_TYPES:
+                    valid_triples.append(t)
+                else:
+                    # Логируем, какую именно тройку мы отбросили (чтобы понимать масштабы галлюцинаций)
+                    print(f"    ⚠️ Отброшена галлюцинация: {rel} | {subj_type} | {obj_type}")
+            
+            return ExtractionResult(triples=valid_triples)
         except Exception as e:
-            print(f"Ошибка при обработке чанка в Ollama (возможно, галлюцинация схемы): {e}")
+            print(f"❌ Критическая ошибка при парсинге JSON от Ollama: {e}")
             return ExtractionResult(triples=[])
 
 # =====================================================================

@@ -181,6 +181,1161 @@
       "relation": "related_to",
       "object": "Goro project",
       "object_type": "Concept"
+    },
+    {
+      "subject": "NST process",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "capacity to function",
+      "object_type": "Property"
+    },
+    {
+      "subject": "NST process",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "good environmental performances",
+      "object_type": "Property"
+    },
+    {
+      "subject": "first metal tapping",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "April 2013",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "SLN",
+      "subject_type": "Organization",
+      "relation": "has_property",
+      "object": "competitiveness",
+      "object_type": "Property"
+    },
+    {
+      "subject": "SLN",
+      "subject_type": "Organization",
+      "relation": "has_property",
+      "object": "8,5 GXPF achieved",
+      "object_type": "Property"
+    },
+    {
+      "subject": "SLN",
+      "subject_type": "Organization",
+      "relation": "has_property",
+      "object": "10,7 GXPF planned",
+      "object_type": "Property"
+    },
+    {
+      "subject": "factory electricity plant",
+      "subject_type": "Equipment",
+      "relation": "operates_at_condition",
+      "object": "coal",
+      "object_type": "Material"
+    },
+    {
+      "subject": "SLN",
+      "subject_type": "Organization",
+      "relation": "has_property",
+      "object": "2181 employees",
+      "object_type": "Property"
+    },
+    {
+      "subject": "SLN",
+      "subject_type": "Organization",
+      "relation": "has_property",
+      "object": "2100 planned employees",
+      "object_type": "Property"
+    },
+    {
+      "subject": "SLN",
+      "subject_type": "Organization",
+      "relation": "has_property",
+      "object": "2369 employees (2009)",
+      "object_type": "Property"
+    },
+    {
+      "subject": "KNS project",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "NST process",
+      "object_type": "Process"
+    },
+    {
+      "subject": "Decision (December 2012)",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "switch the factory electricity plant to coal",
+      "object_type": "Process"
+    },
+    {
+      "subject": "Nickel industry NC",
+      "subject_type": "Organization",
+      "relation": "has_property",
+      "object": "2181 employees",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Nickel industry NC",
+      "subject_type": "Organization",
+      "relation": "has_property",
+      "object": "2100 planned employees",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Nickel industry NC",
+      "subject_type": "Organization",
+      "relation": "has_property",
+      "object": "2369 employees in 2009",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Nickel production 2012",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "60 000 tons planned",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Nickel production 2012",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "56 000 tons achieved",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Nickel production 2014",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "65 000 tons planned",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Plant capacity",
+      "subject_type": "Equipment",
+      "relation": "has_property",
+      "object": "30 000 tons",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Plant capacity",
+      "subject_type": "Equipment",
+      "relation": "has_property",
+      "object": "54 000 tons after expansion",
+      "object_type": "Property"
+    },
+    {
+      "subject": "SMSP – Posco JV",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "supply challenge",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Local committee",
+      "subject_type": "Organization",
+      "relation": "part_of",
+      "object": "environmental initiatives",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Continuous investments",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "environment",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Doniambo",
+      "subject_type": "Facility",
+      "relation": "located_in",
+      "object": "Noumea",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Grand Saint Pierre",
+      "subject_type": "Location",
+      "relation": "related_to",
+      "object": "nickel exploration",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Stamboul",
+      "subject_type": "Location",
+      "relation": "related_to",
+      "object": "nickel exploration",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Union Révolution",
+      "subject_type": "Location",
+      "relation": "related_to",
+      "object": "nickel exploration",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Nickel industry NC",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "mid term production increase",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "plant",
+      "subject_type": "Facility",
+      "relation": "produces_output",
+      "object": "nickel",
+      "object_type": "Material"
+    },
+    {
+      "subject": "technical feasibility study",
+      "subject_type": "Process",
+      "relation": "related_to",
+      "object": "plant capacity expansion",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "plant capacity",
+      "subject_type": "Property",
+      "relation": "has_property",
+      "object": "54 000 tons of nickel",
+      "object_type": "Material"
+    },
+    {
+      "subject": "mining",
+      "subject_type": "Process",
+      "relation": "produces_output",
+      "object": "ore",
+      "object_type": "Material"
+    },
+    {
+      "subject": "SLN",
+      "subject_type": "Organization",
+      "relation": "produces_output",
+      "object": "ore",
+      "object_type": "Material"
+    },
+    {
+      "subject": "mining",
+      "subject_type": "Process",
+      "relation": "related_to",
+      "object": "significant mining investments",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "productivity",
+      "subject_type": "Property",
+      "relation": "related_to",
+      "object": "equipment availability",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "productivity",
+      "subject_type": "Property",
+      "relation": "related_to",
+      "object": "production hours",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "productivity",
+      "subject_type": "Property",
+      "relation": "related_to",
+      "object": "mining ratio",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "exploration",
+      "subject_type": "Process",
+      "relation": "related_to",
+      "object": "LT supply",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Ouaco",
+      "subject_type": "Location",
+      "relation": "part_of",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Poya",
+      "subject_type": "Location",
+      "relation": "part_of",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Kouaoua",
+      "subject_type": "Location",
+      "relation": "part_of",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Nakety",
+      "subject_type": "Location",
+      "relation": "part_of",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Boakaine",
+      "subject_type": "Location",
+      "relation": "part_of",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "NMC",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "scope change",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "nickel grade",
+      "subject_type": "Property",
+      "relation": "has_property",
+      "object": "2% decrease",
+      "object_type": "Property"
+    },
+    {
+      "subject": "small miners",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "foreign partners",
+      "object_type": "Organization"
+    },
+    {
+      "subject": "small miners",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "decreasing ore grade",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "foreign partners",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "decreasing ore grade",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "small miners",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "foreign partners",
+      "object_type": "Organization"
+    },
+    {
+      "subject": "ore exported to Japan",
+      "subject_type": "Material",
+      "relation": "has_property",
+      "object": "Nickel grade",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Stériles de laverie",
+      "subject_type": "Material",
+      "relation": "related_to",
+      "object": "Nippon Yakin",
+      "object_type": "Organization"
+    },
+    {
+      "subject": "Stériles de laverie",
+      "subject_type": "Material",
+      "relation": "related_to",
+      "object": "Pamco",
+      "object_type": "Organization"
+    },
+    {
+      "subject": "Stériles de laverie",
+      "subject_type": "Material",
+      "relation": "has_property",
+      "object": "Dry product",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Stériles de laverie",
+      "subject_type": "Material",
+      "relation": "has_property",
+      "object": "Ni content < 1.6%",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Prony & Pernod",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "future",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "production rate",
+      "subject_type": "Property",
+      "relation": "located_in",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "production rate",
+      "subject_type": "Property",
+      "relation": "related_to",
+      "object": "Korea exports",
+      "object_type": "Process"
+    },
+    {
+      "subject": "production rate",
+      "subject_type": "Property",
+      "relation": "related_to",
+      "object": "new projects",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "local human and technical capacity",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "production objectives",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "capacity to access new resources",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "socially acceptable basis",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "NC nickel resources",
+      "subject_type": "Material",
+      "relation": "located_in",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "opportunities for development of NC nickel resources",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "sustainability",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "sustainability",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "preparing the long term future of current investments",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "opportunities for development of NC nickel resources",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "optimization",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "optimization",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "finding customers for low grade ore",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "opportunities for development of NC nickel resources",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "maximization of local added value",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "maximization of local added value",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "climbing up the value chain",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "new mining code",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "modern regulation tool of the mining sector",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "new authorization procedure for mining works",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "public enquiry",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "new authorization procedure for mining works",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "environmental and socio-economic studies",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "new authorization procedure for mining works",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "special administrative police",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "new authorization procedure for mining works",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "financial guarantees for environmental works",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "existing mining site",
+      "subject_type": "Facility",
+      "relation": "related_to",
+      "object": "new authorization procedure for mining works",
+      "object_type": "Process"
+    },
+    {
+      "subject": "mining law",
+      "subject_type": "Document",
+      "relation": "related_to",
+      "object": "industrial strategy",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "mining sites",
+      "subject_type": "Facility",
+      "relation": "has_property",
+      "object": "31",
+      "object_type": "Property"
+    },
+    {
+      "subject": "debates",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "Thio",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Nickel industry",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "31 sites",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Nickel industry",
+      "subject_type": "Concept",
+      "relation": "located_in",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Debates",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "Thio",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Police des mines",
+      "subject_type": "Organization",
+      "relation": "operates_at_condition",
+      "object": "action",
+      "object_type": "Process"
+    },
+    {
+      "subject": "Police des mines",
+      "subject_type": "Organization",
+      "relation": "located_in",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Administrative orders",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "42",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Administrative orders",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "issued since 2009",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Police des mines",
+      "subject_type": "Organization",
+      "relation": "produces_output",
+      "object": "7",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Police des mines",
+      "subject_type": "Organization",
+      "relation": "produces_output",
+      "object": "preliminary judicial actions",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Réserves Techniques Provinciales",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "legislative framework",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Réserves Techniques Provinciales",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "Prony",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Réserves Techniques Provinciales",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "Pernod",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Réserves Techniques Provinciales",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "first use",
+      "object_type": "Property"
+    },
+    {
+      "subject": "first use",
+      "subject_type": "Property",
+      "relation": "related_to",
+      "object": "February 2012",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Mining cadastral system",
+      "subject_type": "Equipment",
+      "relation": "has_property",
+      "object": "active",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Mining cadastral system",
+      "subject_type": "Equipment",
+      "relation": "related_to",
+      "object": "Nickel industry",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "mining cadastral system",
+      "subject_type": "Equipment",
+      "relation": "has_property",
+      "object": "active",
+      "object_type": "Property"
+    },
+    {
+      "subject": "peridotite surface",
+      "subject_type": "Material",
+      "relation": "has_property",
+      "object": "70% covered by mining permit",
+      "object_type": "Property"
+    },
+    {
+      "subject": "mining registry",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "shows great deal of activity",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Vale",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "SMGM",
+      "object_type": "Organization"
+    },
+    {
+      "subject": "Koniambo Nickel SAS",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "mining activity",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "research permits",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "72 awarded since 2009",
+      "object_type": "Property"
+    },
+    {
+      "subject": "mining tenements",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "18",
+      "object_type": "Property"
+    },
+    {
+      "subject": "tenement surface",
+      "subject_type": "Material",
+      "relation": "has_property",
+      "object": "recovered from 50% to 65%",
+      "object_type": "Property"
+    },
+    {
+      "subject": "drilling work",
+      "subject_type": "Process",
+      "relation": "related_to",
+      "object": "tenement surface",
+      "object_type": "Material"
+    },
+    {
+      "subject": "exploration campaigns",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "27 per year authorized",
+      "object_type": "Property"
+    },
+    {
+      "subject": "rehabilitation",
+      "subject_type": "Process",
+      "relation": "located_in",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Rehabilitation",
+      "subject_type": "Process",
+      "relation": "located_in",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "industrial strategic committee",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "nickel",
+      "object_type": "Material"
+    },
+    {
+      "subject": "government",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "mining policy",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "provinces",
+      "subject_type": "Organization",
+      "relation": "related_to",
+      "object": "mining policy",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "regular meetings",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "since 2010",
+      "object_type": "Property"
+    },
+    {
+      "subject": "regular meetings",
+      "subject_type": "Process",
+      "relation": "managed_by",
+      "object": "elected representatives",
+      "object_type": "Organization"
+    },
+    {
+      "subject": "Plan pluriannuel de réhabilitation des sites miniers dégradés",
+      "subject_type": "Document",
+      "relation": "related_to",
+      "object": "rehabilitation",
+      "object_type": "Process"
+    },
+    {
+      "subject": "Intervention",
+      "subject_type": "Process",
+      "relation": "managed_by",
+      "object": "Fonds Nickel",
+      "object_type": "Organization"
+    },
+    {
+      "subject": "Intervention",
+      "subject_type": "Process",
+      "relation": "has_property",
+      "object": "2014-18",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Hors programme",
+      "subject_type": "Concept",
+      "relation": "related_to",
+      "object": "Fonds Nickel",
+      "object_type": "Organization"
+    },
+    {
+      "subject": "Preliminary report",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "drafted in 2012",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Preliminary report",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "based on extensive research",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Nickel resources inventory",
+      "subject_type": "Document",
+      "relation": "part_of",
+      "object": "Preliminary report",
+      "object_type": "Document"
+    },
+    {
+      "subject": "Economic analysis",
+      "subject_type": "Document",
+      "relation": "part_of",
+      "object": "Preliminary report",
+      "object_type": "Document"
+    },
+    {
+      "subject": "Technical analysis",
+      "subject_type": "Document",
+      "relation": "part_of",
+      "object": "Preliminary report",
+      "object_type": "Document"
+    },
+    {
+      "subject": "Socio-economic work",
+      "subject_type": "Document",
+      "relation": "part_of",
+      "object": "Preliminary report",
+      "object_type": "Document"
+    },
+    {
+      "subject": "Extra technical work",
+      "subject_type": "Document",
+      "relation": "related_to",
+      "object": "Preliminary report",
+      "object_type": "Document"
+    },
+    {
+      "subject": "Nickel market analysis 2020",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "2020",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Jim Lennon",
+      "subject_type": "Expert",
+      "relation": "related_to",
+      "object": "Nickel market analysis 2020",
+      "object_type": "Document"
+    },
+    {
+      "subject": "Wood Mac Kenzy",
+      "subject_type": "Expert",
+      "relation": "related_to",
+      "object": "Nickel market analysis 2020",
+      "object_type": "Document"
+    },
+    {
+      "subject": "Preliminary assessment of SMVRM",
+      "subject_type": "Document",
+      "relation": "part_of",
+      "object": "Preliminary report",
+      "object_type": "Document"
+    },
+    {
+      "subject": "NC2025",
+      "subject_type": "Concept",
+      "relation": "produces_output",
+      "object": "opportunity to discuss further topics",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Sovereign fund",
+      "subject_type": "Facility",
+      "relation": "has_property",
+      "object": "preserves interests of next generations",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Pacific Islands",
+      "subject_type": "Location",
+      "relation": "related_to",
+      "object": "sovereign funds",
+      "object_type": "Facility"
+    },
+    {
+      "subject": "Pacific Islands",
+      "subject_type": "Location",
+      "relation": "has_property",
+      "object": "small population",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Pacific Islands",
+      "subject_type": "Location",
+      "relation": "has_property",
+      "object": "inequalities in economic fabric",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Pacific Islands",
+      "subject_type": "Location",
+      "relation": "has_property",
+      "object": "isolation",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Pacific Islands",
+      "subject_type": "Location",
+      "relation": "has_property",
+      "object": "budget volatility",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Laterite processing technologies",
+      "subject_type": "Process",
+      "relation": "related_to",
+      "object": "Technical analysis",
+      "object_type": "Document"
+    },
+    {
+      "subject": "New Caledonia",
+      "subject_type": "Location",
+      "relation": "has_property",
+      "object": "Small population",
+      "object_type": "Property"
+    },
+    {
+      "subject": "New Caledonia",
+      "subject_type": "Location",
+      "relation": "has_property",
+      "object": "Inequalities in the economic fabric",
+      "object_type": "Property"
+    },
+    {
+      "subject": "New Caledonia",
+      "subject_type": "Location",
+      "relation": "has_property",
+      "object": "Isolation",
+      "object_type": "Property"
+    },
+    {
+      "subject": "New Caledonia",
+      "subject_type": "Location",
+      "relation": "has_property",
+      "object": "Budget volatility",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Nickel in New Caledonia",
+      "subject_type": "Material",
+      "relation": "has_property",
+      "object": "non-renewable",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Nickel in New Caledonia",
+      "subject_type": "Material",
+      "relation": "produces_output",
+      "object": "economic development",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Mining royalty",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "widespread in mining countries",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Mining royalty",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "does not exist in New Caledonia",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Oil & Gas",
+      "subject_type": "Material",
+      "relation": "located_in",
+      "object": "EEZ of New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "EEZ of New Caledonia",
+      "subject_type": "Location",
+      "relation": "part_of",
+      "object": "New Caledonia",
+      "object_type": "Location"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "uses_material",
+      "object": "DIMENC (surpac)",
+      "object_type": "Equipment"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "side effect",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "minimal thickness of mineralizations",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "limited influence area",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Methodology",
+      "subject_type": "Process",
+      "relation": "validated_by",
+      "object": "Pierre CHARLENT",
+      "object_type": "Expert"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "contradicts",
+      "object": "JORC",
+      "object_type": "Document"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "related_to",
+      "object": "Indicated Resources",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "related_to",
+      "object": "KNS",
+      "object_type": "Organization"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "related_to",
+      "object": "VALE NC",
+      "object_type": "Organization"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "related_to",
+      "object": "SMSP",
+      "object_type": "Organization"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "61,000 drill holes",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "1,650 km",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "Less than 60 m",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "From 60 m to 80 m",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "From 80 m to 140 m",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Nickel Resources Inventory",
+      "subject_type": "Document",
+      "relation": "has_property",
+      "object": "More than 140 m",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Lateites",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "tonnage (millions)",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Saprolites",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "tonnage (millions)",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Lateites",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "average Ni grade",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Saprolites",
+      "subject_type": "Concept",
+      "relation": "has_property",
+      "object": "average Ni grade",
+      "object_type": "Property"
+    },
+    {
+      "subject": "Lateites",
+      "subject_type": "Concept",
+      "relation": "part_of",
+      "object": "geological resources",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Saprolites",
+      "subject_type": "Concept",
+      "relation": "part_of",
+      "object": "geological resources",
+      "object_type": "Concept"
+    },
+    {
+      "subject": "Nickel Resources Inventory Results",
+      "subject_type": "Document",
+      "relation": "related_to",
+      "object": "Nickel Resources Inventory",
+      "object_type": "Document"
     }
   ]
 }
