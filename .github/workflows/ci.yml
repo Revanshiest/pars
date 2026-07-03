@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nickel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            nickel/requirements.txt
+            nickel/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint (compile)
+        run: |
+          python -m compileall -q api services agent ontology cli.py
+
+      - name: Unit & integration tests
+        env:
+          SKIP_OLLAMA_HEALTH: "true"
+          JWT_SECRET: test-secret-key-minimum-32-characters!!
+          PLATFORM_DB: /tmp/nickel-test.db
+        run: |
+          pytest tests/ -v --tb=short
+
+      - name: CLI smoke
+        env:
+          SKIP_OLLAMA_HEALTH: "true"
+          JWT_SECRET: test-secret-key-minimum-32-characters!!
+        run: |
+          python cli.py health --no-ollama

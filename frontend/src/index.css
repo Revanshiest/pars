@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    @apply bg-surface-950 text-surface-100 font-sans antialiased;
+    margin: 0;
+  }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { @apply bg-surface-900; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-700 rounded-full; }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700
+           text-white font-semibold rounded-xl transition-all text-sm shadow-brand
+           disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98];
+  }
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-surface-900
+           text-surface-200 font-medium rounded-xl transition-all text-sm
+           border border-surface-700 shadow-card disabled:opacity-50 active:scale-[0.98];
+  }
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 text-surface-400
+           hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-all text-sm;
+  }
+  .card { @apply bg-white border border-surface-700 rounded-2xl shadow-card; }
+  .input {
+    @apply w-full bg-white border border-surface-700 rounded-xl px-3 py-2
+           text-surface-100 placeholder-surface-500 text-sm
+           focus:outline-none focus:ring-2 focus:ring-brand-600/40 focus:border-brand-500 transition-all;
+  }
+  .badge { @apply inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-medium; }
+  .section-title { @apply text-lg font-bold text-surface-100; }
+  .label { @apply text-xs font-semibold text-surface-400 uppercase tracking-wider; }
+  .nav-item { @apply flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all; }
+  .nav-item-active { @apply bg-brand-600 text-white shadow-brand; }
+  .nav-item-idle { @apply text-surface-300 hover:text-brand-600 hover:bg-brand-50; }
+}
+
+.log-line-info { @apply text-surface-300; }
+.log-line-success { @apply text-emerald-600; }
+.log-line-warning { @apply text-amber-600; }
+.log-line-error { @apply text-red-500; }

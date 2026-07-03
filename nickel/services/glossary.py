@@ -1,0 +1,206 @@
+"""Глоссарий: exact match + BGE semantic synonym matching."""
+
+from __future__ import annotations
+
+import re
+from functools import lru_cache
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+
+from services.store import get_store
+
+
+def detect_geography(text: str) -> str | None:
+    lower = text.lower()
+    ru_markers = ["росси", "отечествен", "норматив", "гост", "рф", "снг"]
+    en_markers = ["international", "global", "worldwide", "united states", "australia"]
+    if any(m in lower for m in ru_markers):
+        return "RU"
+    if any(m in lower for m in en_markers):
+        return "EN"
+    if re.search(r"[А-Яа-я]", text[:500]):
+        return "RU"
+    return "global"
+
+
+class GlossaryMatcher:
+    """Exact index + BGE-m3 semantic similarity для синонимов RU/EN."""
+
+    SIM_THRESHOLD = 0.72
+
+    def __init__(self):
+        self._embedder = None
+        self._term_vectors: Optional[np.ndarray] = None
+        self._term_entries: List[Dict[str, Any]] = []
+
+    @property
+    def embedder(self):
+        if self._embedder is None:
+            from langchain_community.embeddings import HuggingFaceEmbeddings
+            self._embedder = HuggingFaceEmbeddings(model_name="BAAI/bge-m3")
+        return self._embedder
+
+    def _build_entries(self) -> List[Dict[str, Any]]:
+        entries = []
+        for term in get_store().list_glossary():
+            forms = [term["canonical"]] + term["synonyms_ru"] + term["synonyms_en"]
+            for form in forms:
+                entries.append({
+                    "form": form,
+                    "canonical": term["canonical"],
+                    "domain": term.get("domain"),
+                    "lang": "ru" if re.search(r"[а-яё]", form, re.I) else "en",
+                })
+        return entries
+
+    def _ensure_vectors(self):
+        entries = self._build_entries()
+        if entries == self._term_entries and self._term_vectors is not None:
+            return
+        self._term_entries = entries
+        if not entries:
+            self._term_vectors = np.array([])
+            return
+        texts = [e["form"] for e in entries]
+        self._term_vectors = np.array(self.embedder.embed_documents(texts))
+
+    def semantic_lookup(self, text: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """BGE: найти ближайшие термины глоссария к фрагменту текста."""
+        self._ensure_vectors()
+        if self._term_vectors is None or len(self._term_vectors) == 0:
+            return []
+
+        q_vec = np.array(self.embedder.embed_query(text))
+        norms = np.linalg.norm(self._term_vectors, axis=1) * np.linalg.norm(q_vec)
+        norms = np.where(norms == 0, 1, norms)
+        scores = self._term_vectors @ q_vec / norms
+
+        top_idx = np.argsort(scores)[::-1][:top_k * 2]
+        seen_canonical = set()
+        results = []
+        for idx in top_idx:
+            score = float(scores[idx])
+            if score < self.SIM_THRESHOLD:
+                break
+            entry = self._term_entries[idx]
+            if entry["canonical"] in seen_canonical:
+                continue
+            seen_canonical.add(entry["canonical"])
+            results.append({
+                "canonical": entry["canonical"],
+                "matched_form": entry["form"],
+                "score": round(score, 3),
+                "lang": entry["lang"],
+            })
+            if len(results) >= top_k:
+                break
+        return results
+
+    def normalize_term(self, name: str) -> Tuple[str, Optional[Dict]]:
+        index = get_store().build_glossary_index()
+        key = name.strip().lower()
+        if key in index:
+            return index[key], None
+        matches = self.semantic_lookup(name, top_k=1)
+        if matches:
+            return matches[0]["canonical"], matches[0]
+        return name.strip(), None
+
+
+@lru_cache(maxsize=1)
+def _matcher() -> GlossaryMatcher:
+    return GlossaryMatcher()
+
+
+def normalize_entity(name: str, index: Optional[Dict[str, str]] = None) -> str:
+    index = index or get_store().build_glossary_index()
+    key = name.strip().lower()
+    if key in index:
+        return index[key]
+    canonical, _ = _matcher().normalize_term(name)
+    return canonical
+
+
+def normalize_triples(
+    triples: List[Dict[str, Any]],
+    document_text: str = "",
+    auto_learn: bool = True,
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    store = get_store()
+    matcher = _matcher()
+    index = store.build_glossary_index()
+    geo = detect_geography(document_text)
+    stats = {"normalized": 0, "semantic_normalized": 0, "new_terms": 0}
+
+    for t in triples:
+        for field in ("subject", "object"):
+            orig = t[field]
+            canonical, match = matcher.normalize_term(orig)
+            t[field] = canonical
+            if canonical != orig:
+                stats["normalized"] += 1
+                if match:
+                    stats["semantic_normalized"] += 1
+
+        if not t.get("geography"):
+            t["geography"] = geo
+        if t.get("confidence") is None:
+            t["confidence"] = 0.7
+        t.setdefault("verification_status", "pending")
+
+        if auto_learn:
+            for name, etype in [(t["subject"], t["subject_type"]), (t["object"], t["object_type"])]:
+                if name.lower() not in index and len(name) > 2:
+                    store.add_glossary_term({
+                        "canonical": name,
+                        "synonyms_ru": [],
+                        "synonyms_en": [],
+                        "domain": etype,
+                        "definition": "Автоматически извлечено из документа",
+                    }, source="pipeline")
+                    index[name.lower()] = name
+                    matcher._term_vectors = None  # invalidate cache
+                    stats["new_terms"] += 1
+
+    return triples, stats
+
+
+def expand_query_with_glossary(query: str, use_bge: bool = True) -> Dict[str, Any]:
+    """Exact + BGE расширение запроса синонимами RU/EN."""
+    store = get_store()
+    index = store.build_glossary_index()
+    q_lower = query.lower()
+    extras: List[str] = []
+    matched_terms: List[Dict] = []
+
+    for term in store.list_glossary():
+        all_forms = [term["canonical"]] + term["synonyms_ru"] + term["synonyms_en"]
+        if any(f.lower() in q_lower for f in all_forms):
+            matched_terms.append({"canonical": term["canonical"], "method": "exact"})
+            extras.extend(all_forms[:4])
+
+    if use_bge:
+        for hit in _matcher().semantic_lookup(query, top_k=5):
+            matched_terms.append({**hit, "method": "bge"})
+            extras.append(hit["canonical"])
+            term = next((t for t in store.list_glossary() if t["canonical"] == hit["canonical"]), None)
+            if term:
+                extras.extend(term["synonyms_ru"][:2])
+                extras.extend(term["synonyms_en"][:2])
+
+    canonical = index.get(q_lower)
+    if canonical:
+        term = next((t for t in store.list_glossary() if t["canonical"] == canonical), None)
+        if term:
+            extras.extend(term["synonyms_ru"] + term["synonyms_en"])
+
+    unique_extras = list(dict.fromkeys(extras))
+    expanded = query + (" " + " ".join(unique_extras) if unique_extras else "")
+
+    return {
+        "original": query,
+        "expanded": expanded.strip(),
+        "synonyms_added": unique_extras,
+        "matched_terms": matched_terms,
+    }

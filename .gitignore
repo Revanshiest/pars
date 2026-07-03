@@ -1,1 +1,28 @@
 venv/
+.env
+data/
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Pipeline outputs
+*_extracted.json
+*_yandex_graph.json
+global_cleaned_graph.json
+*.ttl
+extracted_images/
+
+# PyVis generated assets
+nickel/lib/
+
+# TLS certs (generate: python scripts/generate_certs.py)
+deploy/nginx/certs/*.pem
+nginx/certs/*.pem
+
+# IDE
+.idea/
+.vscode/
