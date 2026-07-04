@@ -80,18 +80,52 @@ async def _extract_from_text_document(
     from orchestrator import should_process_chunk
 
     all_triples: List[Dict[str, Any]] = []
-    batch_size = 3 if type(extractor).__name__ == "OllamaExtractorAdapter" else 8
-    total_batches = (len(chunks) - 1) // batch_size + 1 if chunks else 0
+    is_ollama = type(extractor).__name__ == "OllamaExtractorAdapter"
+    if is_ollama:
+        batch_size = max(1, int(os.getenv("OLLAMA_EXTRACT_BATCH_SIZE", "1")))
+    else:
+        batch_size = max(1, int(os.getenv("YANDEX_EXTRACT_BATCH_SIZE", "8")))
+
+    processable = [c for c in chunks if should_process_chunk(c["text"])]
+    total_chunks = len(processable)
+    total_batches = (total_chunks - 1) // batch_size + 1 if processable else 0
+    chunk_timeout = float(os.getenv("EXTRACT_CHUNK_TIMEOUT_SEC", "600"))
+    chunk_index = 0
 
     for i in range(0, len(chunks), batch_size):
         batch = [c for c in chunks[i : i + batch_size] if should_process_chunk(c["text"])]
         if not batch:
             continue
         batch_num = i // batch_size + 1
-        if on_progress:
-            on_progress("extract", batch_num, total_batches, f"Батч {batch_num}/{total_batches}")
 
-        tasks = [extractor.extract_triples(c["text"], c["meta_context"]) for c in batch]
+        async def _extract_chunk(chunk: Dict[str, Any], global_idx: int) -> List[Dict[str, Any]] | Exception:
+            label = (
+                f"Извлечение чанка {global_idx}/{total_chunks} через LLM "
+                f"({len(chunk['text'])} симв.)…"
+            )
+            if on_progress:
+                on_progress("extract", global_idx, total_chunks, label)
+            try:
+                return await asyncio.wait_for(
+                    extractor.extract_triples(chunk["text"], chunk["meta_context"]),
+                    timeout=chunk_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                return exc
+
+        tasks = []
+        for chunk in batch:
+            chunk_index += 1
+            tasks.append(_extract_chunk(chunk, chunk_index))
+
+        if on_progress and batch_size > 1:
+            on_progress(
+                "extract",
+                batch_num,
+                total_batches,
+                f"Пакет LLM {batch_num}/{total_batches} ({len(batch)} чанков параллельно)…",
+            )
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for chunk, res in zip(batch, results):
@@ -106,8 +140,29 @@ async def _extract_from_text_document(
                         t["source_page"] = page
                         t.setdefault("properties", {})["source_page"] = page
                 all_triples.extend(res)
+                if on_progress:
+                    on_progress(
+                        "extract",
+                        chunk_index,
+                        total_chunks,
+                        f"Чанк {chunk['id']}: извлечено {len(res)} фактов",
+                    )
+            elif isinstance(res, asyncio.TimeoutError):
+                if on_progress:
+                    on_progress(
+                        "extract",
+                        chunk_index,
+                        total_chunks,
+                        f"Таймаут чанка {chunk['id']} ({int(chunk_timeout)} с) — пропуск",
+                    )
             elif isinstance(res, Exception):
-                continue
+                if on_progress:
+                    on_progress(
+                        "extract",
+                        chunk_index,
+                        total_chunks,
+                        f"Ошибка чанка {chunk['id']}: {res}",
+                    )
 
     return all_triples, chunks, markdown
 
@@ -339,11 +394,17 @@ async def run_full_pipeline(
         f"Извлечено {len(triple_dicts)} фактов ({doc_kind['label']}). Job: {job_id}",
     )
 
+    from services.graph_stats import summarize_import
+
+    import_stats = summarize_import(triple_dicts)
+
     return {
         "job_id": job_id,
         "document_kind": doc_kind,
         "extraction_backend": extraction_backend,
-        "triples_count": len(triple_dicts),
+        "triples_count": import_stats["triples_count"],
+        "entities_count": import_stats["entities_count"],
+        "facts_count": import_stats["facts_count"],
         "chunks_count": len(chunks),
         "entity_resolution": er_stats,
         "numeric_extraction": numeric_stats,

@@ -212,6 +212,35 @@ class JobStore:
             )
         self.append_log(job_id, error, level="error")
 
+    def cancel_job(self, job_id: str, reason: str = "Отменено пользователем") -> bool:
+        job = self.get_job(job_id)
+        if not job:
+            return False
+        if job["status"] not in ACTIVE_STATUSES:
+            return False
+        self.fail_job(job_id, reason)
+        return True
+
+    def reconcile_stale_jobs(self, reason: str = "Прервано перезапуском сервиса") -> int:
+        """Пометить зависшие pending/running задачи как failed (после рестарта API)."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id FROM jobs WHERE status IN (?, ?)",
+                (JobStatus.PENDING.value, JobStatus.RUNNING.value),
+            ).fetchall()
+            if not rows:
+                return 0
+            ids = [r["id"] for r in rows]
+            conn.execute(
+                """UPDATE jobs SET status=?, error=?, message=?, updated_at=?
+                   WHERE status IN (?, ?)""",
+                (JobStatus.FAILED.value, reason, reason, now, JobStatus.PENDING.value, JobStatus.RUNNING.value),
+            )
+        for jid in ids:
+            self.append_log(jid, reason, level="warning")
+        return len(ids)
+
     def update_batch_stats(self, batch_id: str, done: int, failed: int, total: int):
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:

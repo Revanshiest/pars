@@ -25,8 +25,28 @@ const TYPE_CFG = {
 
 const DEFAULT_CFG = { from: '#5302e0', to: '#4200b5', glow: '#5302e0' }
 
-const SIM_W = 820
-const SIM_H = 520
+const SIM_W = 960
+const SIM_H = 600
+
+function normalizeLayout(nodes, pad = 56) {
+  if (nodes.length < 2) return
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  nodes.forEach(n => {
+    minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x)
+    minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y)
+  })
+  const w = maxX - minX || 1
+  const h = maxY - minY || 1
+  const scale = Math.min((SIM_W - pad * 2) / w, (SIM_H - pad * 2) / h, 1.8)
+  const cx = (minX + maxX) / 2
+  const cy = (minY + maxY) / 2
+  nodes.forEach(n => {
+    n.x = SIM_W / 2 + (n.x - cx) * scale
+    n.y = SIM_H / 2 + (n.y - cy) * scale
+    n.vx = 0
+    n.vy = 0
+  })
+}
 
 function buildDeg(edges) {
   const d = {}
@@ -39,9 +59,10 @@ function buildDeg(edges) {
 
 function initSimNodes(nodes, edges) {
   const deg = buildDeg(edges)
+  const spread = Math.min(SIM_W, SIM_H) * (0.28 + Math.min(nodes.length, 120) / 400)
   return nodes.map((n, i) => {
-    const angle = (i / Math.max(nodes.length, 1)) * Math.PI * 2
-    const r = 150 + (Math.random() - 0.5) * 60
+    const angle = (i / Math.max(nodes.length, 1)) * Math.PI * 2 + (Math.random() - 0.5) * 0.4
+    const r = spread * (0.5 + Math.random() * 0.5)
     return {
       id: n.id,
       label: n.name,
@@ -55,10 +76,11 @@ function initSimNodes(nodes, edges) {
 }
 
 function simTick(nodes, edges, alpha) {
-  const REP = 5600, LINK = 0.16, REST = 130, GRAV = 0.032, DAMP = 0.82
-  const cx = SIM_W / 2, cy = SIM_H / 2
+  const REP = 4200, LINK = 0.14, REST = 110 + Math.min(nodes.length, 80), GRAV = 0.07, DAMP = 0.84
+  const margin = 40
   const map = {}
   nodes.forEach(n => { map[n.id] = n; n.ax = 0; n.ay = 0 })
+  const cx = SIM_W / 2, cy = SIM_H / 2
 
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
@@ -93,8 +115,12 @@ function simTick(nodes, edges, alpha) {
     if (n.fx !== null) { n.x = n.fx; n.y = n.fy; n.vx = 0; n.vy = 0; return }
     n.vx = (n.vx + n.ax) * DAMP
     n.vy = (n.vy + n.ay) * DAMP
-    n.x = Math.max(28, Math.min(SIM_W - 28, n.x + n.vx))
-    n.y = Math.max(28, Math.min(SIM_H - 28, n.y + n.vy))
+    n.x += n.vx
+    n.y += n.vy
+    if (n.x < margin) { n.x = margin; n.vx *= -0.25 }
+    if (n.x > SIM_W - margin) { n.x = SIM_W - margin; n.vx *= -0.25 }
+    if (n.y < margin) { n.y = margin; n.vy *= -0.25 }
+    if (n.y > SIM_H - margin) { n.y = SIM_H - margin; n.vy *= -0.25 }
   })
 }
 
@@ -158,7 +184,11 @@ export default function GraphPage() {
   const startSim = useCallback((edges) => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     const loop = () => {
-      if (alphaRef.current < 0.004) { forceRender(n => n + 1); return }
+      if (alphaRef.current < 0.004) {
+        normalizeLayout(nodesRef.current)
+        forceRender(n => n + 1)
+        return
+      }
       simTick(nodesRef.current, edges, alphaRef.current)
       alphaRef.current *= 0.97
       forceRender(n => n + 1)
@@ -238,7 +268,7 @@ export default function GraphPage() {
     return () => window.removeEventListener('resize', fitToView)
   }, [loading, fitToView])
 
-  const reheat = () => { alphaRef.current = 0.8; startSim(filteredEdges) }
+  const reheat = () => { alphaRef.current = 0.8; startSim(filteredEdges); setTimeout(() => normalizeLayout(nodesRef.current), 1200) }
 
   const toSim = useCallback((cx, cy) => {
     const rect = svgRef.current?.getBoundingClientRect()
@@ -384,7 +414,7 @@ export default function GraphPage() {
             <option value="">Все документы</option>
             {documents.map(d => (
               <option key={d.source_document} value={d.source_document}>
-                {d.source_document} ({d.facts})
+                {d.source_document} — {d.entities ?? '?'} узл., {d.facts} факт.
               </option>
             ))}
           </select>

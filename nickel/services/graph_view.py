@@ -97,7 +97,27 @@ def _document_counts(store) -> List[Dict[str, Any]]:
             LIMIT 50
             """
         ).fetchall()
-    return [{"source_document": r["source_document"], "facts": r["facts"]} for r in rows]
+        out = []
+        for r in rows:
+            doc = r["source_document"]
+            ent_row = conn.execute(
+                """
+                SELECT COUNT(*) AS c FROM (
+                    SELECT DISTINCT subject || '|' || COALESCE(subject_type, 'Concept') AS e
+                    FROM verified_facts WHERE source_document=?
+                    UNION
+                    SELECT DISTINCT object || '|' || COALESCE(object_type, 'Concept') AS e
+                    FROM verified_facts WHERE source_document=?
+                )
+                """,
+                (doc, doc),
+            ).fetchone()
+            out.append({
+                "source_document": doc,
+                "facts": r["facts"],
+                "entities": int(ent_row["c"]) if ent_row else 0,
+            })
+    return out
 
 
 def facts_as_triples(facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

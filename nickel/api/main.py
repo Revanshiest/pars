@@ -102,6 +102,11 @@ async def lifespan(app: FastAPI):
             loader.init_schema()
     except Exception:
         pass
+
+    stale = job_store.reconcile_stale_jobs()
+    if stale:
+        print(f"Jobs: reconciled {stale} stale task(s) after restart")
+
     yield
 
 
@@ -401,6 +406,19 @@ async def get_job_children(job_id: str, user=Depends(get_current_user)):
     if not job_store.get_job(job_id):
         raise HTTPException(404, "Job not found")
     return [JobResponse(**j) for j in job_store.list_jobs(limit=200, batch_id=job_id)]
+
+
+@app.post("/api/v1/jobs/{job_id}/cancel", response_model=JobResponse)
+async def cancel_job(job_id: str, user=Depends(get_current_user)):
+    check_permission(user, "upload")
+    job = job_store.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job["status"] not in ("pending", "running"):
+        raise HTTPException(409, f"Job is already {job['status']}")
+    job_store.cancel_job(job_id, "Отменено пользователем")
+    audit_action(user, "job.cancel", job_id, {"filename": job.get("filename")})
+    return JobResponse(**job_store.get_job(job_id))
 
 
 @app.post("/api/v1/search/semantic", response_model=SemanticSearchResponse)

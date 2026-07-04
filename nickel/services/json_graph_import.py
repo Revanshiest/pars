@@ -176,13 +176,19 @@ def import_triples_json_file(filepath: str, job_id: str) -> Dict[str, Any]:
         except Exception as e:
             qdrant_stats["error"] = str(e)
 
+    from services.graph_stats import summarize_import
+
+    import_stats = summarize_import(triples)
+
     return {
         "job_id": job_id,
         "source_document": basename,
         "document_kind": {"kind": document_metadata.get("document_kind", "publication")},
         "extraction_backend": "json_fast_import",
-        "triples_count": len(triples),
-        "triples_loaded": len(triples),
+        "triples_count": import_stats["triples_count"],
+        "entities_count": import_stats["entities_count"],
+        "facts_count": import_stats["facts_count"],
+        "triples_loaded": import_stats["triples_count"],
         "chunks_count": 0,
         "entity_resolution": {"skipped": True},
         "glossary": {"new_terms": glossary_added},

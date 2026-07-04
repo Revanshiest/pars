@@ -1,5 +1,6 @@
 import json
 import asyncio
+import os
 from typing import List
 
 from ontology.schema import (
@@ -20,7 +21,14 @@ from langchain_core.output_parsers import JsonOutputParser
 
 class OllamaAPI:
     def __init__(self, model_name: str = "gpt-oss:120b-cloud", base_url: str = "http://localhost:11434"):
-        self.llm = ChatOllama(model=model_name, base_url=base_url, format="json", temperature=0)
+        timeout = float(os.getenv("OLLAMA_REQUEST_TIMEOUT_SEC", "600"))
+        self.llm = ChatOllama(
+            model=model_name,
+            base_url=base_url,
+            format="json",
+            temperature=0,
+            timeout=timeout,
+        )
         self.parser = JsonOutputParser(pydantic_object=ExtractionResult)
 
         self.prompt = PromptTemplate(

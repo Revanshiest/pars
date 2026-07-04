@@ -85,11 +85,33 @@ function LogPanel({ auth, jobId }) {
   )
 }
 
+function jobImportStats(job) {
+  const r = job?.result
+  if (!r) return null
+  const entities = r.entities_count
+  const facts = r.facts_count ?? r.triples_count ?? r.triples_loaded
+  if (entities == null && facts == null) return null
+  return { entities, facts }
+}
+
 function JobRow({ job, auth, expanded, onToggle, onRefresh }) {
   const cfg = STATUS[job.status] || STATUS.pending
   const Icon = cfg.icon
   const progress = pct(job)
   const isBatch = job.job_type === 'batch'
+  const stats = jobImportStats(job)
+  const isActive = job.status === 'running' || job.status === 'pending'
+
+  const handleCancel = async (e) => {
+    e.stopPropagation()
+    if (!window.confirm('Отменить задачу?')) return
+    try {
+      await api.cancelJob(auth, job.id)
+      onRefresh()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
 
   return (
     <div className={clsx('card border transition-all', cfg.bg)}>
@@ -118,8 +140,13 @@ function JobRow({ job, auth, expanded, onToggle, onRefresh }) {
               </span>
             )}
             {job.message && !expanded && <span className="text-surface-300 truncate">· {job.message}</span>}
+            {stats && job.status === 'completed' && (
+              <span className="text-emerald-600 font-medium">
+                · {stats.entities} узлов, {stats.facts} фактов
+              </span>
+            )}
           </div>
-          {(job.status === 'running' || job.status === 'pending' || isBatch) && (
+          {isActive && (
             <div className="mt-2 h-1.5 bg-surface-800 rounded-full overflow-hidden max-w-md">
               <div className="h-full bg-brand-600 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
             </div>
@@ -141,10 +168,35 @@ function JobRow({ job, auth, expanded, onToggle, onRefresh }) {
             <p className="text-sm text-red-500 mt-2">{job.error}</p>
           )}
           {job.stage && (
-            <p className="text-xs text-surface-400 mt-2">Этап: <strong>{job.stage}</strong></p>
+            <p className="text-xs text-surface-400 mt-2">
+              Этап: <strong>{job.stage}</strong>
+              {job.progress_total > 0 && (
+                <span> · {job.progress_current}/{job.progress_total}</span>
+              )}
+            </p>
+          )}
+          {job.message && (
+            <p className="text-xs text-brand-600 mt-1">{job.message}</p>
+          )}
+          {stats && job.status === 'completed' && (
+            <div className="mt-2 grid grid-cols-2 gap-2 text-center">
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 py-2">
+                <div className="text-lg font-black text-emerald-700">{stats.entities}</div>
+                <div className="text-[10px] text-emerald-600">узлов в графе</div>
+              </div>
+              <div className="rounded-lg bg-brand-50 border border-brand-200 py-2">
+                <div className="text-lg font-black text-brand-700">{stats.facts}</div>
+                <div className="text-[10px] text-brand-600">фактов (triples)</div>
+              </div>
+            </div>
           )}
           <LogPanel auth={auth} jobId={job.id} />
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 flex gap-2 flex-wrap">
+            {isActive && (
+              <button type="button" className="btn-secondary text-xs text-red-600" onClick={handleCancel}>
+                Отменить
+              </button>
+            )}
             <button type="button" className="btn-ghost text-xs" onClick={onRefresh}>
               <RefreshCw size={12} /> Обновить статус
             </button>
