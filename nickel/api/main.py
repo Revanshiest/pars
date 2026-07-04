@@ -34,6 +34,7 @@ from api.models import (
 from api.routers.glossary import router as glossary_router
 from api.routers.platform import router as platform_router
 from api.routers.search import router as search_router
+from api.routers.verification import router as verification_router
 from agent.search_agent import KnowledgeAgent
 from ontology.schema import NODE_TYPES, RELATIONS
 from services.neo4j_loader import Neo4jLoader
@@ -131,6 +132,7 @@ app.add_middleware(
 app.include_router(platform_router)
 app.include_router(glossary_router)
 app.include_router(search_router)
+app.include_router(verification_router)
 
 ADMIN_STATIC = Path(__file__).resolve().parent / "static" / "admin"
 if ADMIN_STATIC.is_dir():
