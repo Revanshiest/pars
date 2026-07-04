@@ -184,6 +184,7 @@ export const api = {
   rotateUserKey: (auth, userId) =>
     request(`/api/v1/admin/users/${userId}/rotate-key`, { ...auth, method: 'POST' }),
 
+  glossaryConfig: (auth) => request('/api/v1/glossary/config', auth),
   listGlossary: (auth, { domain, q } = {}) => {
     const params = new URLSearchParams()
     if (domain) params.set('domain', domain)

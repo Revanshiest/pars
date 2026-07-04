@@ -191,18 +191,35 @@ async def numeric_search(body: NumericSearchRequest, user=Depends(get_current_us
     )
 
 
+@router.get("/glossary/config")
+async def glossary_config(user=Depends(get_current_user)):
+    check_permission(user, "glossary_read")
+    from services.glossary import glossary_use_bge
+    return {"bge_enabled": glossary_use_bge()}
+
+
 @router.post("/glossary/lookup")
 async def glossary_semantic_lookup(body: GlossaryLookupRequest, user=Depends(get_current_user)):
     check_permission(user, "glossary_read")
-    from services.glossary import GlossaryMatcher
-    return {"text": body.text, "matches": GlossaryMatcher().semantic_lookup(body.text, top_k=body.top_k)}
+    import asyncio
+    from services.glossary import glossary_lookup
+    try:
+        return await asyncio.to_thread(glossary_lookup, body.text, body.top_k)
+    except Exception as e:
+        raise HTTPException(503, f"Glossary lookup failed: {e}") from e
 
 
 @router.get("/glossary/expand")
 async def glossary_expand(q: str, user=Depends(get_current_user)):
     check_permission(user, "glossary_read")
-    from services.glossary import expand_query_with_glossary
-    return expand_query_with_glossary(q, use_bge=True)
+    import asyncio
+    from services.glossary import expand_query_with_glossary, glossary_use_bge
+    try:
+        return await asyncio.to_thread(
+            expand_query_with_glossary, q, glossary_use_bge()
+        )
+    except Exception as e:
+        raise HTTPException(503, f"Glossary expand failed: {e}") from e
 
 
 @router.get("/glossary")
@@ -215,7 +232,9 @@ async def list_glossary(domain: Optional[str] = None, q: Optional[str] = None, u
 @router.post("/glossary")
 async def create_glossary_term(body: GlossaryTermCreate, user=Depends(get_current_user)):
     check_permission(user, "glossary_write")
+    from services.glossary import invalidate_glossary_cache
     tid = get_store().add_glossary_term(body.model_dump())
+    invalidate_glossary_cache()
     audit_action(user, "glossary.create", tid, body.model_dump())
     return {"id": tid, **body.model_dump()}
 
@@ -223,9 +242,11 @@ async def create_glossary_term(body: GlossaryTermCreate, user=Depends(get_curren
 @router.patch("/glossary/{term_id}")
 async def update_glossary_term(term_id: str, body: GlossaryTermUpdate, user=Depends(get_current_user)):
     check_permission(user, "glossary_write")
+    from services.glossary import invalidate_glossary_cache
     updated = get_store().update_glossary_term(term_id, body.model_dump(exclude_unset=True))
     if not updated:
         raise HTTPException(404, "Term not found")
+    invalidate_glossary_cache()
     audit_action(user, "glossary.update", term_id)
     return updated
 
@@ -233,8 +254,10 @@ async def update_glossary_term(term_id: str, body: GlossaryTermUpdate, user=Depe
 @router.delete("/glossary/{term_id}")
 async def delete_glossary_term(term_id: str, user=Depends(get_current_user)):
     check_permission(user, "glossary_write")
+    from services.glossary import invalidate_glossary_cache
     if not get_store().delete_glossary_term(term_id):
         raise HTTPException(404, "Term not found")
+    invalidate_glossary_cache()
     audit_action(user, "glossary.delete", term_id)
     return {"deleted": True}
 
@@ -242,32 +265,35 @@ async def delete_glossary_term(term_id: str, user=Depends(get_current_user)):
 @router.post("/search/filtered")
 async def search_filtered(body: FilteredSearchRequest, user=Depends(get_current_user)):
     check_permission(user, "search")
+    import asyncio
     from services.health import is_degraded_ok
     if not is_degraded_ok("search_vector"):
         raise HTTPException(503, "Vector search unavailable (Qdrant down). Graph/glossary may still work.")
     audit_action(user, "search.filtered", details={"query": body.query})
-    return filtered_search(**body.model_dump(), role=user["role"])
+    return await asyncio.to_thread(filtered_search, **body.model_dump(), role=user["role"])
 
 
 @router.post("/search/compare-practices")
 async def search_compare_practices(body: ComparePracticesRequest, user=Depends(get_current_user)):
     check_permission(user, "compare")
+    import asyncio
     from services.health import is_degraded_ok
     if not is_degraded_ok("search_vector"):
         raise HTTPException(503, "Vector search unavailable (Qdrant down).")
     audit_action(user, "search.compare_practices", details={"query": body.query})
-    return compare_practices(**body.model_dump())
+    return await asyncio.to_thread(compare_practices, **body.model_dump())
 
 
 @router.post("/search/hybrid")
 async def search_hybrid(body: FilteredSearchRequest, user=Depends(get_current_user)):
     check_permission(user, "search")
+    import asyncio
     from services.health import is_degraded_ok
     from services.hybrid_search import hybrid_ranked_search
     if not is_degraded_ok("search_vector"):
         raise HTTPException(503, "Vector search unavailable (Qdrant down). Graph/glossary may still work.")
     audit_action(user, "search.hybrid", details={"query": body.query})
-    return hybrid_ranked_search(**body.model_dump(), role=user["role"])
+    return await asyncio.to_thread(hybrid_ranked_search, **body.model_dump(), role=user["role"])
 
 
 @router.get("/facts/{fact_id}")

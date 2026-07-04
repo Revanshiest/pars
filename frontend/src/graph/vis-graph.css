@@ -1,0 +1,23 @@
+/* vis-network в светлой теме Nickel */
+.vis-graph-host {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.vis-graph-host .vis-network {
+  outline: none;
+  border: none;
+}
+
+.vis-graph-host .vis-network:focus {
+  outline: none;
+}
+
+.vis-graph-host .vis-tooltip {
+  display: none !important;
+}
+
+.vis-graph-host .vis-navigation {
+  display: none;
+}

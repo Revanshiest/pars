@@ -77,7 +77,7 @@ services:
       YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID}
       AUTH_ADMIN: ${AUTH_ADMIN}
       PLATFORM_DB: /app/data/platform.db
-      GLOSSARY_USE_BGE: ${GLOSSARY_USE_BGE:-true}
+      GLOSSARY_USE_BGE: ${GLOSSARY_USE_BGE:-false}
       STRICT_SHACL: ${STRICT_SHACL:-true}
       UPLOAD_DIR: /app/data/uploads
       OUTPUT_DIR: /app/data/outputs

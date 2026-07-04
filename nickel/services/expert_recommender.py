@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Set
 
-from services.glossary import expand_query_with_glossary
+from services.glossary import expand_query_with_glossary, glossary_use_bge
 from services.neo4j_loader import Neo4jLoader
 from services.search_filters import filtered_search
 from services.store import get_store
@@ -14,7 +14,7 @@ from services.store import get_store
 def _topic_terms(topic: str) -> Set[str]:
     terms = {topic.lower()}
     try:
-        g = expand_query_with_glossary(topic, use_bge=True)
+        g = expand_query_with_glossary(topic, use_bge=glossary_use_bge())
         terms.add(g.get("expanded", topic).lower())
         terms.update(s.lower() for s in g.get("synonyms_added", []))
     except Exception:

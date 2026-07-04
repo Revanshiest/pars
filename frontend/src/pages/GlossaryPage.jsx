@@ -30,6 +30,7 @@ export default function GlossaryPage() {
   const [lookupText, setLookupText] = useState('')
   const [lookupLoading, setLookupLoading] = useState(false)
   const [lookupResults, setLookupResults] = useState(null)
+  const [bgeEnabled, setBgeEnabled] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -60,6 +61,7 @@ export default function GlossaryPage() {
   }, [auth, domain, search])
 
   useEffect(() => {
+    api.glossaryConfig(auth).then(c => setBgeEnabled(!!c?.bge_enabled)).catch(() => setBgeEnabled(false))
     api.listGlossary(auth).then(list => {
       const doms = [...new Set((Array.isArray(list) ? list : []).map(t => t.domain).filter(Boolean))].sort()
       setAllDomains(doms)
@@ -170,8 +172,18 @@ export default function GlossaryPage() {
       <div className="card p-5">
         <h3 className="section-title text-sm flex items-center gap-2 mb-3">
           <Sparkles size={15} className="text-violet-500" />
-          Семантический поиск (BGE)
+          Поиск по глоссарию
         </h3>
+        {bgeEnabled === false && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+            BGE-m3 отключён (<code className="text-[10px]">GLOSSARY_USE_BGE=false</code>) — работает быстрый текстовый поиск по синонимам.
+          </p>
+        )}
+        {bgeEnabled === true && (
+          <p className="text-xs text-surface-400 mb-3">
+            Текстовый поиск + семантика BGE-m3. Первый запрос может занять 1–2 мин (загрузка модели); остальное приложение не блокируется.
+          </p>
+        )}
         <form onSubmit={runLookup} className="flex gap-2">
           <input
             className="input text-sm flex-1"
@@ -188,10 +200,15 @@ export default function GlossaryPage() {
         {lookupResults && (
           <div className="mt-4 space-y-2">
             <p className="text-xs text-surface-400">
-              Совпадения для «{lookupResults.text}»:
+              Совпадения для «{lookupResults.text}»
+              {lookupResults.mode && (
+                <span className="text-surface-500"> · {lookupResults.mode === 'exact' ? 'текст' : 'текст + BGE'}</span>
+              )}:
             </p>
             {lookupResults.matches?.length === 0 && (
-              <p className="text-sm text-surface-400">Ничего не найдено (порог similarity 0.72)</p>
+              <p className="text-sm text-surface-400">
+                Ничего не найдено{bgeEnabled ? ' (порог BGE similarity 0.72)' : ''}
+              </p>
             )}
             {lookupResults.matches?.map(m => (
               <div key={m.canonical + m.matched_form} className="flex items-center gap-3 p-3 rounded-xl bg-surface-900 border border-surface-700">
@@ -201,6 +218,9 @@ export default function GlossaryPage() {
                   {m.score}
                 </span>
                 <span className="text-[10px] text-surface-400 uppercase">{m.lang}</span>
+                {m.method && (
+                  <span className="text-[10px] text-surface-500">{m.method}</span>
+                )}
               </div>
             ))}
           </div>

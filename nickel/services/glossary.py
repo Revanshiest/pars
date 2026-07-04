@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -12,6 +13,8 @@ import numpy as np
 from services.store import get_store
 
 ProgressCallback = Callable[[int, int, Optional[str]], None]
+
+_vector_lock = threading.Lock()
 
 
 def detect_geography(text: str) -> str | None:
@@ -31,6 +34,11 @@ def glossary_use_bge() -> bool:
     return os.getenv("GLOSSARY_USE_BGE", "true").lower() in ("1", "true", "yes")
 
 
+def invalidate_glossary_cache() -> None:
+    """Сброс кэша векторов после изменения глоссария."""
+    _matcher.cache_clear()
+
+
 class GlossaryMatcher:
     """Exact index + BGE-m3 semantic similarity для синонимов RU/EN."""
 
@@ -41,6 +49,7 @@ class GlossaryMatcher:
         self._embedder = None
         self._term_vectors: Optional[np.ndarray] = None
         self._term_entries: List[Dict[str, Any]] = []
+        self._vectors_version: int = -1
 
     @property
     def embedder(self):
@@ -50,30 +59,40 @@ class GlossaryMatcher:
         return self._embedder
 
     def _build_entries(self) -> List[Dict[str, Any]]:
+        """Один вектор на канонический термин (не на каждый синоним) — быстрее и меньше RAM."""
         entries = []
         for term in get_store().list_glossary():
-            forms = [term["canonical"]] + term["synonyms_ru"] + term["synonyms_en"]
-            for form in forms:
-                entries.append({
-                    "form": form,
-                    "canonical": term["canonical"],
-                    "domain": term.get("domain"),
-                    "lang": "ru" if re.search(r"[а-яё]", form, re.I) else "en",
-                })
+            canonical = term["canonical"]
+            entries.append({
+                "form": canonical,
+                "canonical": canonical,
+                "domain": term.get("domain"),
+                "lang": "ru" if re.search(r"[а-яё]", canonical, re.I) else "en",
+            })
         return entries
+
+    def _glossary_version(self) -> int:
+        return len(get_store().list_glossary())
 
     def _ensure_vectors(self):
         if not self.use_bge:
             return
-        entries = self._build_entries()
-        if entries == self._term_entries and self._term_vectors is not None:
+        version = self._glossary_version()
+        if version == self._vectors_version and self._term_vectors is not None:
             return
-        self._term_entries = entries
-        if not entries:
-            self._term_vectors = np.array([])
-            return
-        texts = [e["form"] for e in entries]
-        self._term_vectors = np.array(self.embedder.embed_documents(texts))
+        with _vector_lock:
+            version = self._glossary_version()
+            if version == self._vectors_version and self._term_vectors is not None:
+                return
+            entries = self._build_entries()
+            self._term_entries = entries
+            if not entries:
+                self._term_vectors = np.array([])
+                self._vectors_version = version
+                return
+            texts = [e["form"] for e in entries]
+            self._term_vectors = np.array(self.embedder.embed_documents(texts))
+            self._vectors_version = version
 
     def semantic_lookup(self, text: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """BGE: найти ближайшие термины глоссария к фрагменту текста."""
@@ -104,6 +123,7 @@ class GlossaryMatcher:
                 "matched_form": entry["form"],
                 "score": round(score, 3),
                 "lang": entry["lang"],
+                "method": "bge",
             })
             if len(results) >= top_k:
                 break
@@ -121,9 +141,73 @@ class GlossaryMatcher:
         return name.strip(), None
 
 
-@lru_cache(maxsize=1)
-def _matcher(use_bge: bool = True) -> GlossaryMatcher:
+@lru_cache(maxsize=2)
+def _matcher(use_bge: bool) -> GlossaryMatcher:
     return GlossaryMatcher(use_bge=use_bge)
+
+
+def exact_glossary_lookup(text: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    """Быстрый текстовый поиск без BGE."""
+    q = text.lower().strip()
+    if not q:
+        return []
+    results: List[Dict[str, Any]] = []
+    seen = set()
+    for term in get_store().list_glossary():
+        canonical = term["canonical"]
+        forms = [canonical] + term.get("synonyms_ru", []) + term.get("synonyms_en", [])
+        best_score = 0.0
+        best_form = canonical
+        for form in forms:
+            fl = form.lower()
+            if fl == q:
+                best_score, best_form = 1.0, form
+                break
+            if q in fl:
+                best_score = max(best_score, 0.92)
+                best_form = form
+            elif fl in q:
+                best_score = max(best_score, 0.88)
+                best_form = form
+        if best_score > 0 and canonical not in seen:
+            seen.add(canonical)
+            results.append({
+                "canonical": canonical,
+                "matched_form": best_form,
+                "score": round(best_score, 3),
+                "lang": "ru" if re.search(r"[а-яё]", best_form, re.I) else "en",
+                "method": "exact",
+            })
+    results.sort(key=lambda x: (-x["score"], x["canonical"]))
+    return results[:top_k]
+
+
+def _merge_lookups(exact: List[Dict], semantic: List[Dict], top_k: int) -> List[Dict]:
+    merged: Dict[str, Dict] = {}
+    for item in exact + semantic:
+        c = item["canonical"]
+        if c not in merged or item["score"] > merged[c]["score"]:
+            merged[c] = item
+    return sorted(merged.values(), key=lambda x: -x["score"])[:top_k]
+
+
+def glossary_lookup(text: str, top_k: int = 5) -> Dict[str, Any]:
+    """Синхронный lookup: exact всегда, BGE если включён."""
+    exact = exact_glossary_lookup(text, top_k=top_k)
+    if not glossary_use_bge():
+        return {
+            "text": text,
+            "matches": exact,
+            "mode": "exact",
+            "bge_enabled": False,
+        }
+    semantic = _matcher(True).semantic_lookup(text, top_k=top_k)
+    return {
+        "text": text,
+        "matches": _merge_lookups(exact, semantic, top_k),
+        "mode": "exact+bge",
+        "bge_enabled": True,
+    }
 
 
 def normalize_entity(name: str, index: Optional[Dict[str, str]] = None) -> str:
@@ -195,8 +279,7 @@ def normalize_triples(
         store.add_glossary_term(term, source="pipeline")
 
     if pending_terms:
-        matcher._term_vectors = None
-        matcher._term_entries = []
+        invalidate_glossary_cache()
 
     return triples, stats
 
@@ -215,7 +298,8 @@ def expand_query_with_glossary(query: str, use_bge: bool = True) -> Dict[str, An
             matched_terms.append({"canonical": term["canonical"], "method": "exact"})
             extras.extend(all_forms[:4])
 
-    if use_bge and glossary_use_bge():
+    bge_on = use_bge and glossary_use_bge()
+    if bge_on:
         for hit in _matcher(True).semantic_lookup(query, top_k=5):
             matched_terms.append({**hit, "method": "bge"})
             extras.append(hit["canonical"])
@@ -238,4 +322,5 @@ def expand_query_with_glossary(query: str, use_bge: bool = True) -> Dict[str, An
         "expanded": expanded.strip(),
         "synonyms_added": unique_extras,
         "matched_terms": matched_terms,
+        "bge_enabled": bge_on,
     }

@@ -7,6 +7,8 @@ mkdir -p "$CONF_DIR"
 
 if [ -n "$DOMAIN" ] && [ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]; then
   sed "s/@DOMAIN@/${DOMAIN}/g" /etc/nginx/https.conf.template > "${CONF_DIR}/default.conf"
+elif [ -n "$DOMAIN" ]; then
+  sed "s/server_name _;/server_name ${DOMAIN};/" /etc/nginx/http-only.conf > "${CONF_DIR}/default.conf"
 else
   cp /etc/nginx/http-only.conf "${CONF_DIR}/default.conf"
 fi
