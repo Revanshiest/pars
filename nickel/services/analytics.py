@@ -157,9 +157,12 @@ def find_knowledge_gaps(
     return _legacy_gap_heuristics(domain)
 
 
-def _legacy_gap_heuristics(domain: Optional[str] = None) -> Dict[str, Any]:
+def _compute_legacy_heuristics(
+    domain: Optional[str] = None,
+    facts: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     store = get_store()
-    facts = store.list_facts(limit=500)
+    facts = facts if facts is not None else store.list_facts(limit=500)
     processes = set()
     materials = set()
     geographies = set()
@@ -196,8 +199,6 @@ def _legacy_gap_heuristics(domain: Optional[str] = None) -> Dict[str, Any]:
     ru_topics = {f["subject"] for f in ru_only} - {f["subject"] for f in en_only}
     en_topics = {f["subject"] for f in en_only} - {f["subject"] for f in ru_only}
 
-    ontology = find_ontology_gaps(domain=domain)
-
     return {
         "uncovered_processes": uncovered[:15],
         "weakly_supported_combinations": weak_combos[:20],
@@ -205,6 +206,14 @@ def _legacy_gap_heuristics(domain: Optional[str] = None) -> Dict[str, Any]:
         "en_only_topics": list(en_topics)[:15],
         "total_combinations": len(combos),
         "geographies_present": list(geographies),
+    }
+
+
+def _legacy_gap_heuristics(domain: Optional[str] = None) -> Dict[str, Any]:
+    heuristics = _compute_legacy_heuristics(domain)
+    ontology = find_ontology_gaps(domain=domain)
+    return {
+        **heuristics,
         "ontology_gaps": ontology.get("ontology_gaps", []),
         "critical_gaps": ontology.get("critical_gaps", 0),
     }

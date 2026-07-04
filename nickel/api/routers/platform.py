@@ -393,8 +393,9 @@ async def knowledge_gaps(
 ):
     check_permission(user, "read")
     audit_action(user, "analytics.gaps", details={"query": query, "domain": domain})
-    return find_knowledge_gaps(
-        domain=domain, query=query, material=material, process=process, climate=climate
+    return await run_search(
+        find_knowledge_gaps,
+        domain=domain, query=query, material=material, process=process, climate=climate,
     )
 
 
@@ -402,7 +403,7 @@ async def knowledge_gaps(
 async def ontology_gaps(body: OntologyGapRequest, user=Depends(get_current_user)):
     check_permission(user, "read")
     audit_action(user, "analytics.gaps.ontology", details=body.model_dump(exclude_none=True))
-    return find_knowledge_gaps(**body.model_dump(exclude_none=True))
+    return await run_search(find_knowledge_gaps, **body.model_dump(exclude_none=True))
 
 
 @router.get("/analytics/recommendations")
@@ -415,8 +416,7 @@ async def recommendations(topic: str, user=Depends(get_current_user)):
 async def compare(body: CompareRequest, user=Depends(get_current_user)):
     check_permission(user, "compare")
     audit_action(user, "analytics.compare", details={"technologies": body.technologies})
-    result = compare_technologies(body.technologies, body.parameters)
-    return result
+    return await run_search(compare_technologies, body.technologies, body.parameters)
 
 
 @router.get("/dashboard")

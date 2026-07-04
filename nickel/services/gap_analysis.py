@@ -57,7 +57,14 @@ def _matches_terms(text: str, terms: List[str]) -> bool:
     return any(term.lower() in t for term in terms)
 
 
+_EXPAND_CACHE: Dict[tuple, List[str]] = {}
+
+
 def _expand_terms(terms: List[str]) -> List[str]:
+    key = tuple(sorted(terms))
+    cached = _EXPAND_CACHE.get(key)
+    if cached is not None:
+        return cached
     expanded = set(terms)
     for term in terms:
         try:
@@ -66,7 +73,9 @@ def _expand_terms(terms: List[str]) -> List[str]:
             expanded.add(g.get("expanded", term))
         except Exception:
             expanded.add(term)
-    return list(expanded)
+    result = list(expanded)
+    _EXPAND_CACHE[key] = result
+    return result
 
 
 def _fact_matches_dimension(fact: Dict[str, Any], node_type: str, terms: List[str]) -> bool:
@@ -174,8 +183,6 @@ def find_ontology_gaps(
     climate: Optional[str] = None,
     domain: Optional[str] = None,
 ) -> Dict[str, Any]:
-    from services.analytics import find_knowledge_gaps
-
     store = get_store()
     facts = store.list_facts(limit=1000)
 
@@ -212,11 +219,13 @@ def find_ontology_gaps(
     analyzed = [analyze_scenario(facts, s) for s in scenarios]
     critical = [a for a in analyzed if a["is_gap"]]
 
+    from services.analytics import _compute_legacy_heuristics
+
     return {
         "query": query,
         "domain": domain,
         "scenarios_analyzed": len(analyzed),
         "critical_gaps": len(critical),
         "ontology_gaps": analyzed,
-        "legacy_heuristics": find_knowledge_gaps(domain),
+        "legacy_heuristics": _compute_legacy_heuristics(domain, facts[:500]),
     }

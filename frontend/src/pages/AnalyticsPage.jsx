@@ -154,8 +154,8 @@ export default function AnalyticsPage() {
           {loading && <Loader2 className="animate-spin-slow text-brand-600" />}
           {gaps && (
             <div className="card p-5 space-y-3">
-              {(gaps.ontology_gaps || [gaps]).slice(0, 3).map(g => (
-                <div key={g.scenario_id || g.label} className="border-b border-surface-800 pb-3 last:border-0">
+              {(gaps.ontology_gaps || (gaps.label ? [gaps] : [])).slice(0, 3).map((g, idx) => (
+                <div key={g.scenario_id || g.label || idx} className="border-b border-surface-800 pb-3 last:border-0">
                   <h3 className="text-sm font-bold text-surface-100">{g.label}</h3>
                   <p className={clsx('text-sm mt-1', g.is_gap ? 'text-amber-600' : 'text-emerald-600')}>
                     {g.is_gap ? `⚠ Пробел (${g.gap_severity})` : '✓ Данные найдены'}
