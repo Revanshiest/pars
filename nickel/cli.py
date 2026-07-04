@@ -101,7 +101,7 @@ def cmd_health(args: argparse.Namespace) -> int:
 
 def cmd_mvp(args: argparse.Namespace) -> int:
     """Legacy: pipeline_mvp без Neo4j/Qdrant (только LLM extraction)."""
-    from pipeline_mvp import run_pipeline
+    from services.ollama_client import run_pipeline
 
     asyncio.run(run_pipeline(args.file))
     return 0

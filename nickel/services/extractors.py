@@ -21,7 +21,7 @@ class TextExtractor(Protocol):
 
 class OllamaExtractorAdapter:
     def __init__(self):
-        from pipeline_mvp import OllamaAPI
+        from services.ollama_client import OllamaAPI
         self._api = OllamaAPI(
             model_name=os.getenv("OLLAMA_MODEL", "gpt-oss:120b-cloud"),
             base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
