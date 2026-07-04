@@ -8,17 +8,11 @@ from typing import Any, Dict, List, Optional
 from services.expert_recommender import recommend_experts
 from services.gap_analysis import find_ontology_gaps
 from services.neo4j_loader import Neo4jLoader
+from services.platform_config import compare_defaults, domain_processes
 from services.search_filters import filtered_search
 from services.store import get_store
 from services.synthesis_llm import synthesize_literature_review
 from services.verification import aggregate_by_source_type, enrich_fact, internal_vs_publication_summary
-
-
-DOMAIN_PROCESSES = {
-    "гидрометаллургия": ["выщелачивание", "электроэкстракция", "обессоливание"],
-    "пирометаллургия": ["плавка", "конвертирование", "ПВП"],
-    "экология": ["шахтные воды", "очистка", "обессоливание"],
-}
 
 
 def _year_from_fact(fact: Dict[str, Any], doc_years: Dict[str, int]) -> Optional[int]:
@@ -148,11 +142,12 @@ def find_knowledge_gaps(
     material: Optional[str] = None,
     process: Optional[str] = None,
     climate: Optional[str] = None,
+    auto: bool = False,
 ) -> Dict[str, Any]:
-    if query or material or process or climate:
+    if query or material or process or climate or auto:
         return find_ontology_gaps(
             query=query, material=material, process=process,
-            climate=climate, domain=domain,
+            climate=climate, domain=domain, auto=auto or not query,
         )
     return _legacy_gap_heuristics(domain)
 
@@ -182,9 +177,10 @@ def _compute_legacy_heuristics(
         if f["subject_type"] in ("Material", "Process") and f["object_type"] in ("Material", "Process"):
             combos.add((f["subject"], f["object"], f.get("geography")))
 
-    target_processes = DOMAIN_PROCESSES.get(domain, []) if domain else []
+    domains = domain_processes()
+    target_processes = domains.get(domain, []) if domain else []
     if not target_processes:
-        for procs in DOMAIN_PROCESSES.values():
+        for procs in domains.values():
             target_processes.extend(procs)
 
     uncovered = [p for p in target_processes if not any(p.lower() in x.lower() for x in processes)]
@@ -211,7 +207,7 @@ def _compute_legacy_heuristics(
 
 def _legacy_gap_heuristics(domain: Optional[str] = None) -> Dict[str, Any]:
     heuristics = _compute_legacy_heuristics(domain)
-    ontology = find_ontology_gaps(domain=domain)
+    ontology = find_ontology_gaps(domain=domain, auto=True)
     return {
         **heuristics,
         "ontology_gaps": ontology.get("ontology_gaps", []),
@@ -253,6 +249,7 @@ def generate_recommendations(topic: str) -> Dict[str, Any]:
         "related_topics": list(related_topics - {topic})[:15],
         "suggested_actions": _suggest_actions(topic, gaps, similar_cases, expert_data),
         "knowledge_gaps_hint": gaps.get("ontology_gaps", [])[:3],
+        "related_processes": expert_data.get("related_processes", []),
         "entities": data.get("entities", [])[:5],
     }
 
@@ -269,8 +266,12 @@ def _suggest_actions(topic, gaps, cases, expert_data) -> List[str]:
         actions.append(f"Изучить процессы: {', '.join(gaps['uncovered_processes'][:3])}.")
     if expert_data.get("fallback_used"):
         actions.append(
-            "Эксперты не извлечены LLM — использованы авторы документов и inferred-контакты; "
-            "рекомендуется ручное добавление Expert через graph editor."
+            "Явные Expert-узлы не найдены — показаны авторы документов; "
+            "добавьте Expert через редактор графа или загрузите каталог сотрудников."
+        )
+    elif expert_data.get("related_processes") and not expert_data.get("has_explicit_experts"):
+        actions.append(
+            f"Смежные процессы по теме: {', '.join(expert_data['related_processes'][:3])}."
         )
     elif expert_data.get("experts"):
         top = expert_data["experts"][0]["name"]
@@ -279,13 +280,39 @@ def _suggest_actions(topic, gaps, cases, expert_data) -> List[str]:
     return actions
 
 
+def _extract_tech_metrics(facts: List[Dict], param_keys: List[str]) -> Dict[str, Any]:
+    """Извлекает числовые и именованные параметры из properties и numeric_constraints."""
+    metrics: Dict[str, Any] = {}
+    for f in facts:
+        props = f.get("properties") or {}
+        for c in props.get("numeric_constraints") or []:
+            if not isinstance(c, dict):
+                continue
+            key = c.get("parameter") or c.get("raw_text") or "value"
+            entry = {
+                "value": c.get("value"),
+                "operator": c.get("operator"),
+                "unit": c.get("unit"),
+                "raw_text": c.get("raw_text"),
+            }
+            metrics.setdefault(key, []).append(entry)
+        for k, v in props.items():
+            if k in ("numeric_constraints", "description", "source_file", "fair", "source_excerpt"):
+                continue
+            if any(p in k.lower() for p in param_keys) or k in param_keys:
+                metrics.setdefault(k, v if not isinstance(v, list) else v[-1])
+    return metrics
+
+
 def compare_technologies(
     technologies: List[str],
     parameters: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     store = get_store()
     facts = store.list_facts(limit=500)
-    params = parameters or ["efficiency", "temperature", "cost", "throughput", "эффективность", "температура"]
+    cmp_cfg = compare_defaults()
+    params = parameters or cmp_cfg.get("default_parameters") or []
+    numeric_keys = cmp_cfg.get("numeric_keys") or []
 
     comparison = {}
     for tech in technologies:
@@ -294,20 +321,16 @@ def compare_technologies(
             f for f in facts
             if tech_lower in f["subject"].lower() or tech_lower in f["object"].lower()
         ]
-        props = {}
         by_year: Dict[str, int] = defaultdict(int)
         for f in related:
             yr = (f.get("properties") or {}).get("year")
             if yr:
                 by_year[str(yr)] += 1
-            for k, v in (f.get("properties") or {}).items():
-                if any(p in k.lower() for p in params):
-                    props[k] = v
         comparison[tech] = {
             "facts_count": len(related),
             "geographies": list({f.get("geography") for f in related if f.get("geography")}),
             "verified_count": sum(1 for f in related if f.get("verification_status") == "verified"),
-            "parameters": props,
+            "parameters": _extract_tech_metrics(related, params + numeric_keys),
             "by_year": dict(by_year),
             "key_relations": dict(Counter(f["relation"] for f in related).most_common(5)),
             "related_entities": list({
@@ -335,8 +358,17 @@ def compare_technologies(
 def _compare_recommendation(comparison: Dict) -> str:
     if not comparison:
         return "Недостаточно данных для сравнения."
-    best = max(comparison.items(), key=lambda x: x[1]["verified_count"])
+    scored = []
+    for name, data in comparison.items():
+        param_count = len(data.get("parameters") or {})
+        score = data["verified_count"] * 2 + data["facts_count"] + param_count
+        scored.append((score, name, data))
+    scored.sort(reverse=True)
+    _, best_name, best = scored[0]
+    param_note = ""
+    if best.get("parameters"):
+        param_note = f", {len(best['parameters'])} параметр(ов) в данных"
     return (
-        f"Наиболее подтверждённая технология: «{best[0]}» "
-        f"({best[1]['verified_count']} верифицированных фактов, {best[1]['facts_count']} всего)."
+        f"Наиболее документированная технология: «{best_name}» "
+        f"({best['verified_count']} verified, {best['facts_count']} фактов{param_note})."
     )

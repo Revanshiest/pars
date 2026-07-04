@@ -5,12 +5,10 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../api/client'
 
-const STARTERS = [
-  'Какой содержание Cu в руде Cerro Verde?',
-  'Какая годовая переработка руды на Cerro Verde?',
-  'Что такое flash smelting?',
+const FALLBACK_STARTERS = [
+  'Какие методы обессоливания воды подходят при сульфатах ≤300 мг/л?',
+  'Какие решения циркуляции католита при электроэкстракции никеля описаны в мировой практике?',
   'Сравни отечественную и мировую практику электроэкстракции меди',
-  'Какие свойства есть у меди?',
 ]
 
 function SourceChip({ item }) {
@@ -53,11 +51,15 @@ function AssistantMessage({ msg }) {
       <div className="flex-1 min-w-0">
         <div className="card p-4">
           <p className="text-sm text-surface-100 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-          {msg.confidence != null && (
+          {msg.llm_synthesized === false ? (
+            <p className="text-[10px] text-amber-600 mt-3">
+              YandexGPT недоступен — показаны сырые данные из БД
+            </p>
+          ) : (
             <p className="text-[10px] text-surface-400 mt-3">
               YandexGPT
               {msg.toolsUsed?.length > 0 && (
-                <span> · инструменты: {msg.toolsUsed.join(', ')}</span>
+                <span> · {msg.toolsUsed.join(', ')}</span>
               )}
             </p>
           )}
@@ -105,8 +107,17 @@ export default function SearchPage() {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [starters, setStarters] = useState(FALLBACK_STARTERS)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
+
+  useEffect(() => {
+    api.searchExamples(auth)
+      .then(data => {
+        if (data?.examples?.length) setStarters(data.examples.slice(0, 5))
+      })
+      .catch(() => {})
+  }, [auth])
 
   const scrollDown = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -175,7 +186,7 @@ export default function SearchPage() {
               Спросите о процессах, материалах, предприятиях или параметрах из загруженных документов
             </p>
             <div className="flex flex-wrap gap-2 justify-center">
-              {STARTERS.map(q => (
+              {starters.map(q => (
                 <button
                   key={q}
                   type="button"

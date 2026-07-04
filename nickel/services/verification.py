@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from services.platform_config import verification_policy
+
 INTERNAL_KINDS = {"report", "experiment_catalog"}
 PUBLICATION_KINDS = {"publication", "patent"}
 REGULATORY_KINDS = {"regulation"}
@@ -30,6 +32,8 @@ def source_kind(fact: Dict[str, Any]) -> str:
 
 def credibility_tier(fact: Dict[str, Any]) -> Dict[str, Any]:
     """Уровень достоверности: tier + score + пояснение."""
+    policy = verification_policy()
+    tiers = policy.get("tiers") or {}
     conf = float(fact.get("confidence") or 0.5)
     status = fact.get("verification_status", "pending")
     sk = source_kind(fact)
@@ -40,24 +44,29 @@ def credibility_tier(fact: Dict[str, Any]) -> Dict[str, Any]:
 
     score = conf
     if verified:
-        score = min(1.0, conf + 0.15)
+        score = min(1.0, conf + float(policy.get("verified_boost", 0.15)))
     if has_doi:
-        score = min(1.0, score + 0.05)
+        score = min(1.0, score + float(policy.get("doi_boost", 0.05)))
     if has_page:
-        score = min(1.0, score + 0.03)
+        score = min(1.0, score + float(policy.get("page_boost", 0.03)))
     if sk == "internal_report" and not verified:
-        score = max(0.0, score - 0.05)
+        score = max(0.0, score - float(policy.get("internal_unverified_penalty", 0.05)))
 
-    if verified and score >= 0.85:
+    high_t = float(tiers.get("high", 0.85))
+    med_t = float(tiers.get("medium", 0.65))
+    med_unv = float(tiers.get("medium_unverified_confidence", 0.75))
+    low_t = float(tiers.get("low", 0.5))
+
+    if verified and score >= high_t:
         tier = "high"
         label = "Высокая (верифицировано экспертом)"
-    elif verified and score >= 0.65:
+    elif verified and score >= med_t:
         tier = "medium"
         label = "Средняя (верифицировано)"
-    elif conf >= 0.75 and has_doi:
+    elif conf >= med_unv and has_doi:
         tier = "medium_unverified"
         label = "Средняя, ожидает верификации (есть DOI)"
-    elif conf >= 0.5:
+    elif conf >= low_t:
         tier = "low"
         label = "Низкая / требует проверки"
     else:

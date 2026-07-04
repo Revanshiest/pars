@@ -6,6 +6,9 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from services.access_control import default_access_level
+from services.platform_config import fair_defaults
+
 
 DOI_PATTERN = re.compile(
     r"(10\.\d{4,9}/[-._;()/:A-Z0-9]+)",
@@ -24,8 +27,11 @@ def build_fair_metadata(
     document_kind: str = "report",
     doi: Optional[str] = None,
     source_file_path: Optional[str] = None,
+    access_level: Optional[str] = None,
 ) -> Dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
+    fair_cfg = fair_defaults()
+    level = access_level or default_access_level(document_kind)
     return {
         "findable": {
             "identifier": doi or f"doc:{source_document}",
@@ -33,17 +39,17 @@ def build_fair_metadata(
             "job_id": job_id,
         },
         "accessible": {
-            "access_level": "internal",
+            "access_level": level,
             "source_file": source_file_path or source_document,
         },
         "interoperable": {
-            "ontology": "nickel-kg-v1",
+            "ontology": fair_cfg.get("ontology", "nickel-kg-v1"),
             "format": "application/ld+json",
             "document_kind": document_kind,
         },
         "reusable": {
-            "license": "internal-rd-use",
-            "provenance": "llm_extraction_pipeline",
+            "license": fair_cfg.get("license", "internal-rd-use"),
+            "provenance": fair_cfg.get("provenance", "llm_extraction_pipeline"),
         },
         "doi": doi,
         "updated_at": now,

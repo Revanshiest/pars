@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from ontology.schema import filter_valid_triples, is_valid_triple
+from services.platform_config import verification_policy
 from services.neo4j_loader import Neo4jLoader
 from services.store import get_store
 
@@ -14,7 +15,7 @@ def add_triple(triple: Dict[str, Any], user_id: str, comment: str = "") -> Dict[
     if not is_valid_triple(triple):
         raise ValueError("Triple does not match ontology")
     triple.setdefault("verification_status", "verified")
-    triple.setdefault("confidence", 0.9)
+    triple.setdefault("confidence", float(verification_policy().get("manual_edit_confidence", 0.9)))
 
     store = get_store()
     store.upsert_facts(

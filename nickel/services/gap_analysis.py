@@ -1,44 +1,16 @@
-"""Онтологический gap analysis: Material × Process × Geography/Climate."""
+"""Онтологический gap analysis: Material × Process × Geography/Climate из данных графа."""
 
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+import re
+from collections import Counter
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from services.glossary import expand_query_with_glossary
 from services.neo4j_loader import Neo4jLoader
+from services.platform_config import domain_processes, gap_analysis_settings
 from services.store import get_store
-
-
-ONTOLOGY_GAP_SCENARIOS: List[Dict[str, Any]] = [
-    {
-        "id": "cold_climate_hl_nickel",
-        "label": "Холодный климат + heap leaching + никель",
-        "dimensions": {
-            "Material": ["никель", "nickel", "Ni", "NiO"],
-            "Process": ["выщелачивание", "HL", "heap leaching", "leaching", "кучное"],
-            "Geography": ["холод", "cold", "arctic", "север", "низк", "криоген", "subarctic", "permafrost"],
-        },
-    },
-    {
-        "id": "arctic_mine_water_ni",
-        "label": "Арктика + шахтные воды + Ni",
-        "dimensions": {
-            "Material": ["никель", "nickel", "Ni", "шахтные воды", "mine water"],
-            "Process": ["обессоливание", "очистка", "desalination", "выщелачивание"],
-            "Geography": ["arctic", "аркт", "холод", "RU", "север"],
-        },
-    },
-    {
-        "id": "electrowinning_cold_cu",
-        "label": "Холодный климат + электроэкстракция + медь",
-        "dimensions": {
-            "Material": ["медь", "copper", "Cu"],
-            "Process": ["электроэкстракция", "electrowinning", "электролиз"],
-            "Geography": ["холод", "cold", "arctic", "север"],
-        },
-    },
-]
 
 
 def _text_blob(fact: Dict[str, Any]) -> str:
@@ -54,7 +26,7 @@ def _text_blob(fact: Dict[str, Any]) -> str:
 
 def _matches_terms(text: str, terms: List[str]) -> bool:
     t = text.lower()
-    return any(term.lower() in t for term in terms)
+    return any(term.lower() in t for term in terms if term)
 
 
 _EXPAND_CACHE: Dict[tuple, List[str]] = {}
@@ -65,7 +37,7 @@ def _expand_terms(terms: List[str]) -> List[str]:
     cached = _EXPAND_CACHE.get(key)
     if cached is not None:
         return cached
-    expanded = set(terms)
+    expanded: Set[str] = set(terms)
     for term in terms:
         try:
             g = expand_query_with_glossary(term, use_bge=False)
@@ -78,10 +50,8 @@ def _expand_terms(terms: List[str]) -> List[str]:
     return result
 
 
-def _fact_matches_dimension(fact: Dict[str, Any], node_type: str, terms: List[str]) -> bool:
-    expanded = _expand_terms(terms)
-    blob = _text_blob(fact)
-    return _matches_terms(blob, expanded)
+def _fact_matches_dimension(fact: Dict[str, Any], terms: List[str]) -> bool:
+    return _matches_terms(_text_blob(fact), _expand_terms(terms))
 
 
 def enrich_fact_brief(f: Dict[str, Any]) -> Dict[str, Any]:
@@ -96,40 +66,39 @@ def enrich_fact_brief(f: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _gap_recommendation(scenario, missing, full, partial) -> str:
+def _gap_recommendation(scenario: Dict, missing: List[str], full: List, partial: List) -> str:
+    label = scenario["label"]
     if missing:
         return (
             f"Критический пробел: нет данных по {', '.join(missing)} "
-            f"для «{scenario['label']}». Загрузите исследования по этим аспектам."
+            f"для «{label}». Загрузите исследования по этим аспектам."
         )
     if not full and not partial:
-        return f"Сценарий «{scenario['label']}» не освещён в графе."
+        return f"Комбинация «{label}» не освещена в графе."
     if not full:
         return (
-            f"Частичное покрытие «{scenario['label']}»: есть факты по отдельным "
+            f"Частичное покрытие «{label}»: есть факты по отдельным "
             f"измерениям, но нет связующих triple."
         )
-    return f"Сценарий «{scenario['label']}» покрыт ({len(full)} связующих фактов)."
+    return f"Комбинация «{label}» покрыта ({len(full)} связующих фактов)."
 
 
 def analyze_scenario(facts: List[Dict[str, Any]], scenario: Dict[str, Any]) -> Dict[str, Any]:
     dimensions = scenario["dimensions"]
     dim_coverage: Dict[str, List[Dict]] = {}
     for dim_name, terms in dimensions.items():
-        dim_coverage[dim_name] = [
-            f for f in facts if _fact_matches_dimension(f, dim_name, terms)
-        ]
+        dim_coverage[dim_name] = [f for f in facts if _fact_matches_dimension(f, terms)]
 
     dim_counts = {k: len(v) for k, v in dim_coverage.items()}
     all_dims = list(dimensions.keys())
 
     full_overlap = [
         f for f in facts
-        if all(_fact_matches_dimension(f, d, dimensions[d]) for d in all_dims)
+        if all(_fact_matches_dimension(f, dimensions[d]) for d in all_dims)
     ]
     partial = [
         f for f in facts
-        if sum(1 for d in all_dims if _fact_matches_dimension(f, d, dimensions[d])) >= 2
+        if sum(1 for d in all_dims if _fact_matches_dimension(f, dimensions[d])) >= max(2, len(all_dims) - 1)
     ]
 
     missing = [d for d in all_dims if dim_counts[d] == 0]
@@ -161,19 +130,232 @@ def analyze_scenario(facts: List[Dict[str, Any]], scenario: Dict[str, Any]) -> D
         "sample_facts": [enrich_fact_brief(f) for f in (full_overlap or partial)[:5]],
         "graph_paths_from_anchor": graph_paths,
         "recommendation": _gap_recommendation(scenario, missing, full_overlap, partial),
+        "preset": scenario.get("preset"),
     }
 
 
+def _collect_entities(facts: List[Dict[str, Any]]) -> Dict[str, Counter]:
+    counters: Dict[str, Counter] = {
+        "Material": Counter(),
+        "Process": Counter(),
+        "Geography": Counter(),
+    }
+    climate_terms = gap_analysis_settings().get("climate_terms") or []
+
+    for f in facts:
+        for side in ("subject", "object"):
+            etype = f.get(f"{side}_type")
+            name = f.get(side, "")
+            if etype in counters and name:
+                counters[etype][name] += 1
+        geo = f.get("geography")
+        if geo:
+            counters["Geography"][geo] += 1
+        blob = _text_blob(f)
+        for term in climate_terms:
+            if term.lower() in blob:
+                counters["Geography"][term] += 1
+
+    return counters
+
+
+def _scenario_id(material: str, process: str, geo: Optional[str]) -> str:
+    slug = re.sub(r"[^\w]+", "_", f"{material}_{process}_{geo or 'any'}".lower()).strip("_")
+    return slug[:80] or "combo"
+
+
+def discover_gap_scenarios(facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Строит сценарии из частых Material × Process × Geography в графе."""
+    settings = gap_analysis_settings()
+    max_scenarios = int(settings.get("max_auto_scenarios", 20))
+    max_axis = int(settings.get("max_entities_per_axis", 8))
+    climate_terms = list(settings.get("climate_terms") or [])
+
+    counters = _collect_entities(facts)
+    materials = [m for m, _ in counters["Material"].most_common(max_axis)]
+    processes = [p for p, _ in counters["Process"].most_common(max_axis)]
+    geographies = [g for g, _ in counters["Geography"].most_common(max_axis)]
+
+    if not materials:
+        store = get_store()
+        materials = [
+            t["canonical"] for t in store.list_glossary(limit=50)
+            if (t.get("domain") or "").lower() == "material"
+        ][:max_axis]
+    if not processes:
+        processes = []
+        for procs in domain_processes().values():
+            processes.extend(procs[:2])
+        processes = list(dict.fromkeys(processes))[:max_axis]
+
+    scenarios: List[Dict[str, Any]] = []
+    seen: Set[str] = set()
+
+    def add_scenario(mat: str, proc: str, geo: Optional[str], label: Optional[str] = None):
+        sid = _scenario_id(mat, proc, geo)
+        if sid in seen:
+            return
+        seen.add(sid)
+        dims: Dict[str, List[str]] = {
+            "Material": _expand_terms([mat]),
+            "Process": _expand_terms([proc]),
+        }
+        if geo:
+            dims["Geography"] = _expand_terms([geo]) if geo not in ("RU", "EN", "global") else [geo]
+        scenarios.append({
+            "id": sid,
+            "label": label or " + ".join(x for x in (mat, proc, geo) if x),
+            "dimensions": dims,
+            "source": "discovered",
+        })
+
+    for mat in materials:
+        for proc in processes:
+            if geographies:
+                for geo in geographies[:4]:
+                    add_scenario(mat, proc, geo)
+            else:
+                add_scenario(mat, proc, None)
+
+    for domain_key, procs in domain_processes().items():
+        for proc in (procs or [])[:3]:
+            for mat in materials[:3]:
+                geo_label = "холодный климат" if any(t in proc.lower() for t in ("выщел", "leach")) else None
+                if geo_label:
+                    add_scenario(
+                        mat, proc, geo_label,
+                        label=f"{domain_key}: {mat} + {proc} + {geo_label}",
+                    )
+
+    if climate_terms and materials and processes:
+        climate = climate_terms[0]
+        for mat in materials[:2]:
+            for proc in processes[:2]:
+                add_scenario(mat, proc, climate, label=f"{climate} + {proc} + {mat}")
+
+    return scenarios[:max_scenarios]
+
+
 def parse_gap_query(query: str) -> Dict[str, Optional[str]]:
-    q = query.lower()
+    """Разбор запроса через глоссарий (Material / Process / Geography)."""
     material = process = climate = None
-    if any(x in q for x in ("ni", "никел", "nickel")):
-        material = "никель"
-    if any(x in q for x in ("hl", "heap", "выщелач", "leaching")):
-        process = "выщелачивание"
-    if any(x in q for x in ("холод", "cold", "arctic", "аркт", "климат", "север")):
-        climate = "холодный климат"
+    q_lower = query.lower()
+
+    try:
+        expanded = expand_query_with_glossary(query, use_bge=False)
+        matched = expanded.get("matched_terms") or []
+    except Exception:
+        matched = []
+
+    store = get_store()
+    for hit in matched:
+        canonical = hit.get("canonical") if isinstance(hit, dict) else None
+        if not canonical:
+            continue
+        term = next(
+            (t for t in store.list_glossary(q=canonical, limit=5) if t["canonical"] == canonical),
+            None,
+        )
+        if not term:
+            continue
+        domain = (term.get("domain") or "").lower()
+        if domain == "material" and not material:
+            material = term["canonical"]
+        elif domain == "process" and not process:
+            process = term["canonical"]
+        elif domain in ("geography", "concept", "parameter") and not climate:
+            climate = term["canonical"]
+
+    settings = gap_analysis_settings()
+    for term in settings.get("climate_terms") or []:
+        if term.lower() in q_lower and not climate:
+            climate = term
+            break
+
+    if not material:
+        for t in store.list_glossary(q=query, limit=20):
+            if (t.get("domain") or "").lower() == "material":
+                forms = [t["canonical"]] + t.get("synonyms_ru", []) + t.get("synonyms_en", [])
+                if any(f.lower() in q_lower for f in forms):
+                    material = t["canonical"]
+                    break
+
+    if not process:
+        for t in store.list_glossary(q=query, limit=20):
+            if (t.get("domain") or "").lower() == "process":
+                forms = [t["canonical"]] + t.get("synonyms_ru", []) + t.get("synonyms_en", [])
+                if any(f.lower() in q_lower for f in forms):
+                    process = t["canonical"]
+                    break
+
     return {"material": material, "process": process, "climate": climate}
+
+
+def _build_custom_scenario(
+    query: Optional[str],
+    material: Optional[str],
+    process: Optional[str],
+    climate: Optional[str],
+) -> Dict[str, Any]:
+    dims = {}
+    if material:
+        dims["Material"] = _expand_terms([material])
+    if process:
+        dims["Process"] = _expand_terms([process])
+    if climate:
+        dims["Geography"] = _expand_terms([climate])
+    label = query or " + ".join(x for x in (climate, process, material) if x)
+    return {
+        "id": "custom_query",
+        "label": label,
+        "dimensions": dims,
+        "source": "query",
+        "preset": {
+            "query": query,
+            "material": material,
+            "process": process,
+            "climate": climate,
+            "label": label,
+        },
+    }
+
+
+def _scenario_matches_query(scenario: Dict[str, Any], query: str) -> bool:
+    q = query.lower()
+    if q in scenario.get("label", "").lower():
+        return True
+    for terms in scenario.get("dimensions", {}).values():
+        if any(q in t.lower() or t.lower() in q for t in terms):
+            return True
+    return False
+
+
+def build_suggested_presets(analyzed: List[Dict[str, Any]], limit: int = 6) -> List[Dict[str, Any]]:
+    """Пресеты для UI из критических пробелов."""
+    gaps = [a for a in analyzed if a.get("is_gap")]
+    gaps.sort(key=lambda x: (
+        0 if x.get("gap_severity") == "critical" else 1,
+        -x.get("partial_overlap_facts", 0),
+    ))
+    presets = []
+    for g in gaps[:limit]:
+        preset = g.get("preset")
+        if preset:
+            presets.append(preset)
+            continue
+        dims = g.get("dimensions") or {}
+        mat = (dims.get("Material") or [None])[0]
+        proc = (dims.get("Process") or [None])[0]
+        geo = (dims.get("Geography") or [None])[0]
+        entry: Dict[str, Any] = {"label": g.get("label", "Пробел")}
+        if mat:
+            entry["material"] = mat
+        if proc:
+            entry["process"] = proc
+        if geo:
+            entry["climate"] = geo
+        presets.append(entry)
+    return presets
 
 
 def find_ontology_gaps(
@@ -182,9 +364,10 @@ def find_ontology_gaps(
     process: Optional[str] = None,
     climate: Optional[str] = None,
     domain: Optional[str] = None,
+    auto: bool = False,
 ) -> Dict[str, Any]:
     store = get_store()
-    facts = store.list_facts(limit=1000)
+    facts = store.list_facts(limit=2000)
 
     if query and not (material or process or climate):
         parsed = parse_gap_query(query)
@@ -192,40 +375,46 @@ def find_ontology_gaps(
         process = process or parsed.get("process")
         climate = climate or parsed.get("climate")
 
-    scenarios = list(ONTOLOGY_GAP_SCENARIOS)
-    if material or process or climate:
-        scenarios.insert(0, {
-            "id": "custom_query",
-            "label": query or f"{climate or '?'} + {process or '?'} + {material or '?'}",
-            "dimensions": {
-                k: v for k, v in {
-                    "Material": [material] if material else None,
-                    "Process": [process] if process else None,
-                    "Geography": [climate] if climate else None,
-                }.items() if v
-            },
-        })
+    scenarios: List[Dict[str, Any]] = []
 
-    if query:
-        q = query.lower()
-        filtered = [
-            s for s in scenarios
-            if any(q in t.lower() for d in s["dimensions"].values() for t in d)
-            or q in s["label"].lower()
-        ]
+    if material or process or climate:
+        scenarios.append(_build_custom_scenario(query, material, process, climate))
+
+    if auto or (not scenarios and not query):
+        scenarios.extend(discover_gap_scenarios(facts))
+
+    if domain:
+        procs = domain_processes().get(domain, [])
+        for proc in procs[:5]:
+            scenarios.append({
+                "id": f"domain_{domain}_{proc}",
+                "label": f"{domain}: {proc}",
+                "dimensions": {"Process": _expand_terms([proc])},
+                "source": "domain",
+            })
+
+    if query and not (material or process or climate):
+        filtered = [s for s in scenarios if _scenario_matches_query(s, query)]
         if filtered:
             scenarios = filtered
 
     analyzed = [analyze_scenario(facts, s) for s in scenarios]
-    critical = [a for a in analyzed if a["is_gap"]]
+    analyzed.sort(key=lambda x: (
+        0 if x.get("is_gap") else 1,
+        0 if x.get("gap_severity") == "critical" else 1,
+        -len(x.get("missing_dimensions") or []),
+    ))
+    critical = [a for a in analyzed if a.get("is_gap")]
 
     from services.analytics import _compute_legacy_heuristics
 
     return {
         "query": query,
         "domain": domain,
+        "auto_discovered": auto or not query,
         "scenarios_analyzed": len(analyzed),
         "critical_gaps": len(critical),
         "ontology_gaps": analyzed,
+        "suggested_presets": build_suggested_presets(analyzed),
         "legacy_heuristics": _compute_legacy_heuristics(domain, facts[:500]),
     }

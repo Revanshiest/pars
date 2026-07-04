@@ -83,3 +83,10 @@ async def search_hybrid(body: FilteredSearchRequest, user=Depends(get_current_us
         return await run_search(hybrid_ranked_search, **body.model_dump(), role=user["role"])
     except Exception as exc:
         raise HTTPException(503, f"Search unavailable: {exc}") from exc
+
+
+@router.get("/search/examples")
+async def search_examples(user=Depends(get_current_user)):
+    check_permission(user, "search")
+    from services.platform_config import search_examples
+    return {"examples": search_examples()}

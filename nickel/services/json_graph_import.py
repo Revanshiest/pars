@@ -11,6 +11,7 @@ from ontology.schema import filter_valid_triples
 from services.fair_metadata import attach_provenance, build_fair_metadata
 from services.json_ingest import load_triples_json, parse_json_upload
 from services.neo4j_loader import Neo4jLoader
+from services.platform_config import verification_policy
 from services.store import get_store
 
 
@@ -127,7 +128,7 @@ def import_triples_json_file(filepath: str, job_id: str) -> Dict[str, Any]:
     document_metadata["fair"] = fair
 
     for t in triples:
-        t.setdefault("confidence", 0.85)
+        t.setdefault("confidence", float(verification_policy().get("json_import_confidence", 0.85)))
         t.setdefault("verification_status", "pending")
         t.setdefault("geography", document_metadata.get("literature_type", "EN"))
 

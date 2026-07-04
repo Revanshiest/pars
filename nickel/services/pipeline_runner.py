@@ -20,6 +20,7 @@ from services.json_ingest import import_glossary_json, load_triples_json, parse_
 from services.neo4j_loader import Neo4jLoader
 from services.qdrant_index import QdrantIndexer
 from services.rdf_export import export_json_to_rdf, triples_to_graph, validate_shacl
+from services.access_control import default_access_level
 from services.store import get_store
 
 ProgressCallback = Callable[[str, int, int, Optional[str]], None]
@@ -263,9 +264,9 @@ async def run_full_pipeline(
     triple_dicts, numeric_stats = enrich_triples_with_numerics(triple_dicts, markdown or os.path.basename(filepath))
 
     from services.document_metadata import enrich_document_metadata
-    from services.glossary import detect_geography
+    from services.geography import detect_geography
 
-    geo = detect_geography(markdown or os.path.basename(filepath))
+    geo = detect_geography(markdown or os.path.basename(filepath), filepath=filepath, doc_kind=doc_kind)
     document_metadata = enrich_document_metadata(
         document_metadata, markdown or os.path.basename(filepath), doc_kind, geography=geo
     )
@@ -279,8 +280,14 @@ async def run_full_pipeline(
 
     progress("glossary", 0, 1, "Нормализация через глоссарий (BGE)")
     triple_dicts, glossary_stats = normalize_triples(
-        triple_dicts, document_text=markdown or os.path.basename(filepath)
+        triple_dicts,
+        document_text=markdown or os.path.basename(filepath),
+        document_geography=geo,
+        document_kind=doc_kind,
     )
+    for t in triple_dicts:
+        if not t.get("geography"):
+            t["geography"] = document_metadata.get("geography") or geo
 
     doi = None
     from services.fair_metadata import attach_provenance, build_fair_metadata, extract_doi
@@ -292,6 +299,7 @@ async def run_full_pipeline(
         document_kind=doc_kind.get("kind", "report"),
         doi=doi,
         source_file_path=os.path.basename(filepath),
+        access_level=default_access_level(doc_kind.get("kind", "report")),
     )
     document_metadata["fair"] = fair
     document_metadata["doi"] = doi

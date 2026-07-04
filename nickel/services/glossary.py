@@ -11,20 +11,15 @@ import numpy as np
 
 from services.store import get_store
 
+from services.platform_config import default_confidence, glossary_similarity_threshold
+from services.geography import detect_geography as _detect_geography_impl
+
 ProgressCallback = Callable[[int, int, Optional[str]], None]
 
 
-def detect_geography(text: str) -> str | None:
-    lower = text.lower()
-    ru_markers = ["росси", "отечествен", "норматив", "гост", "рф", "снг"]
-    en_markers = ["international", "global", "worldwide", "united states", "australia"]
-    if any(m in lower for m in ru_markers):
-        return "RU"
-    if any(m in lower for m in en_markers):
-        return "EN"
-    if re.search(r"[А-Яа-я]", text[:500]):
-        return "RU"
-    return "global"
+def detect_geography(text: str, filepath: str = "", doc_kind: Optional[dict] = None) -> str | None:
+    """Определяет geography документа (RU / EN / global)."""
+    return _detect_geography_impl(text, filepath=filepath, doc_kind=doc_kind)
 
 
 def glossary_use_bge() -> bool:
@@ -34,13 +29,15 @@ def glossary_use_bge() -> bool:
 class GlossaryMatcher:
     """Exact index + BGE-m3 semantic similarity для синонимов RU/EN."""
 
-    SIM_THRESHOLD = 0.72
-
     def __init__(self, use_bge: bool = True):
         self.use_bge = use_bge
         self._embedder = None
         self._term_vectors: Optional[np.ndarray] = None
         self._term_entries: List[Dict[str, Any]] = []
+
+    @property
+    def sim_threshold(self) -> float:
+        return glossary_similarity_threshold()
 
     @property
     def embedder(self):
@@ -93,7 +90,7 @@ class GlossaryMatcher:
         results = []
         for idx in top_idx:
             score = float(scores[idx])
-            if score < self.SIM_THRESHOLD:
+            if score < self.sim_threshold:
                 break
             entry = self._term_entries[idx]
             if entry["canonical"] in seen_canonical:
@@ -141,12 +138,17 @@ def normalize_triples(
     auto_learn: bool = True,
     use_bge: Optional[bool] = None,
     on_progress: Optional[ProgressCallback] = None,
+    document_geography: Optional[str] = None,
+    document_kind: Optional[dict] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     store = get_store()
     use_bge = glossary_use_bge() if use_bge is None else use_bge
     matcher = _matcher(use_bge)
     index = store.build_glossary_index()
-    geo = detect_geography(document_text)
+    geo = document_geography or detect_geography(
+        document_text, doc_kind=document_kind
+    )
+    default_conf = default_confidence()
     stats = {"normalized": 0, "semantic_normalized": 0, "new_terms": 0}
     term_cache: Dict[str, Tuple[str, Optional[Dict]]] = {}
     pending_terms: List[Dict[str, Any]] = []
@@ -171,7 +173,7 @@ def normalize_triples(
         if not t.get("geography"):
             t["geography"] = geo
         if t.get("confidence") is None:
-            t["confidence"] = 0.7
+            t["confidence"] = default_conf
         t.setdefault("verification_status", "pending")
 
         if auto_learn:

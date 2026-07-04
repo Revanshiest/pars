@@ -12,16 +12,19 @@ from services.yandex_llm import yandex_complete
 
 
 SYNTHESIS_SYSTEM = """Ты — эксперт-аналитик R&D в горно-металлургии (медь, никель, процессы, оборудование).
-Отвечай на русском языке развёрнуто и структурированно, как коллеге-инженеру.
+Отвечай на русском языке, как коллеге-инженеру.
 
-Правила:
-1. Используй ТОЛЬКО данные из блока «Контекст инструментов» ниже. Не выдумывай факты.
-2. Если данных мало — честно скажи, чего не хватает, и что можно уточнить.
-3. Числа и единицы указывай точно, как в источнике.
-4. В конце добавь строку «Источники: …» с названиями документов, если они есть в контексте.
-5. Не выводи JSON, score, технические метки инструментов.
-6. Структура ответа: краткий прямой ответ → детали/пояснение → при необходимости список связанных фактов.
-"""
+Обязательный формат ответа:
+1. Первое предложение — прямой ответ на вопрос (с числом и единицей, если спрашивали о параметре).
+2. Далее 1–2 предложения пояснения из контекста.
+3. Строка «Источники: …» — только названия документов.
+
+Запрещено:
+- Нумерованные списки и фразы «Нашёл в базе знаний», «Результаты поиска».
+- JSON, score, названия инструментов (search_facts и т.д.).
+- Выдумывать факты, которых нет в контексте.
+
+Если данных недостаточно — скажи прямо, чего не хватает."""
 
 
 class YandexKnowledgeAgent:
@@ -105,22 +108,53 @@ class YandexKnowledgeAgent:
         except Exception as exc:
             return {"entity": entity_name, "error": str(exc), "edges": []}
 
-    def _format_tool_context(self, tool_name: str, result: Dict[str, Any]) -> str:
+    def _rerank_facts_for_question(self, facts: List[Dict[str, Any]], question: str) -> List[Dict[str, Any]]:
+        from services.query_tokens import extract_search_terms
+
+        terms = extract_search_terms(question)
+        q = question.lower()
+
+        def relevance(f: Dict[str, Any]) -> float:
+            raw = f.get("raw") or f
+            obj = (raw.get("object") or "").lower()
+            props = raw.get("properties") or {}
+            val = str(props.get("value") or "").lower()
+            desc = str(props.get("description") or f.get("description") or "").lower()
+            score = float(f.get("score") or 0)
+            for t in terms:
+                if t in obj:
+                    score += 3
+                if t in val or t in desc:
+                    score += 2
+            if any(w in q for w in ["содержан", "grade", "content", "cu", "мед"]):
+                if "grade" in obj or "cu" in val:
+                    score += 5
+            if any(w in q for w in ["переработ", "tonnes", "capacity", "годов"]):
+                if "treated" in obj or "tonnes" in val or "year" in obj.lower():
+                    score += 5
+            return score
+
+        return sorted(facts, key=relevance, reverse=True)
+
+    def _format_tool_context(self, tool_name: str, result: Dict[str, Any], question: str = "") -> str:
         if result.get("error"):
             return f"[{tool_name}] Ошибка: {result['error']}"
 
         if tool_name == "search_facts":
             items = result.get("results") or result.get("ranked_results") or []
+            facts = [i for i in items if i.get("result_type") == "fact"]
+            other = [i for i in items if i.get("result_type") != "fact"]
+            if question and facts:
+                facts = self._rerank_facts_for_question(facts, question)
             lines = []
-            for i, item in enumerate(items[:12], 1):
-                if item.get("result_type") == "fact":
-                    raw = item.get("raw") or item
-                    d = fact_display_fields(raw) if raw.get("subject") else item
-                    src = (item.get("metadata") or {}).get("source_document") or raw.get("source_document", "")
-                    lines.append(f"{i}. {d.get('title', item.get('title'))}: {d.get('answer') or item.get('answer')} [{src}]")
-                else:
-                    lines.append(f"{i}. {item.get('title', '—')}: {(item.get('snippet') or '')[:200]}")
-            return f"[search_facts] Найдено {len(items)} результатов:\n" + ("\n".join(lines) if lines else "нет")
+            for item in facts[:6]:
+                raw = item.get("raw") or item
+                d = fact_display_fields(raw) if raw.get("subject") else item
+                src = (item.get("metadata") or {}).get("source_document") or raw.get("source_document", "")
+                lines.append(f"• {d.get('answer') or item.get('answer')} [{src}]")
+            for item in other[:3]:
+                lines.append(f"• {item.get('title', '—')}: {(item.get('snippet') or '')[:180]}")
+            return "Факты из базы знаний:\n" + ("\n".join(lines) if lines else "нет данных")
 
         if tool_name == "compare_practices":
             comp = result.get("comparison") or {}
@@ -208,17 +242,15 @@ class YandexKnowledgeAgent:
             result = self._execute_tool(name, args, role)
             tool_calls.append({"tool": name, "args": args, "result_count": _result_count(result)})
             tool_results.append({"tool": name, "result": result})
-            context_blocks.append(self._format_tool_context(name, result))
+            context_blocks.append(self._format_tool_context(name, result, question))
 
         tools_used = [s["name"] for s in plan]
         context_text = "\n\n".join(context_blocks) if context_blocks else "Контекст пуст."
 
         user_prompt = (
             f"Вопрос пользователя:\n{question}\n\n"
-            f"Использованы инструменты: {', '.join(tools_used)}\n"
-            f"Доступные инструменты системы:\n{catalog_for_prompt()}\n\n"
-            f"--- Контекст инструментов ---\n{context_text}\n\n"
-            f"Сформулируй полный ответ на вопрос."
+            f"--- Данные из базы знаний (используй только их) ---\n{context_text}\n\n"
+            f"Дай прямой ответ на вопрос. Без нумерованных списков."
         )
 
         try:
@@ -252,7 +284,7 @@ class YandexKnowledgeAgent:
     ) -> str:
         lines = [f"YandexGPT недоступен ({error}). Данные из базы знаний:\n"]
         for tr in tool_results:
-            lines.append(self._format_tool_context(tr["tool"], tr["result"]))
+            lines.append(self._format_tool_context(tr["tool"], tr["result"], question))
         if len(lines) == 1:
             return "Не удалось получить данные. Проверьте YANDEX_API_KEY и YANDEX_FOLDER_ID."
         return "\n\n".join(lines)

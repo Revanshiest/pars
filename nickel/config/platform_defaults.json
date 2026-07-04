@@ -1,0 +1,32 @@
+{
+  "fair": {
+    "ontology": "nickel-kg-v1",
+    "license": "internal-rd-use",
+    "provenance": "llm_extraction_pipeline"
+  },
+  "glossary": {
+    "similarity_threshold": 0.72
+  },
+  "compare": {
+    "default_parameters": [
+      "efficiency", "temperature", "cost", "throughput", "capex", "opex",
+      "эффективность", "температура", "производительность", "расход"
+    ],
+    "numeric_keys": [
+      "value", "concentration", "temperature", "flow_rate", "temperature_c",
+      "numeric_constraints"
+    ]
+  },
+  "geography": {
+    "ru_markers": [
+      "росси", "отечествен", "норматив", "гост", "рф", "снг", "российск",
+      "минпром", "норникель", "гипро", "внии"
+    ],
+    "en_markers": [
+      "international", "global", "worldwide", "united states", "australia",
+      "canada", "europe", "journal of", "elsevier", "springer", "wiley"
+    ],
+    "ru_journals": ["известия", "цветные металлы", "горный журнал"],
+    "regulation_kinds": ["regulation", "patent"]
+  }
+}

@@ -46,10 +46,11 @@ class KnowledgeAgent:
         else:
             args: Dict[str, Any] = {"query": question, "limit": 15}
             entity_types = {
-                "Material": ["никел", "мед", "сульфат", "nickel", "copper", "cu"],
-                "Process": ["электроэкстракц", "выщелачиван", "leaching", "smelting"],
-                "Equipment": ["ванн", "ячейк", "cell", "furnace"],
-                "Facility": ["cerro", "olympic", "завод", "mine"],
+                "Material": ["никел", "мед", "сульфат", "nickel", "copper", "au", "ag", "мпг"],
+                "Process": ["электроэкстракц", "выщелачиван", "leaching", "smelting", "обессолив"],
+                "Equipment": ["ванн", "ячейк", "cell", "furnace", "печь", "диафрагм"],
+                "Facility": ["завод", "mine", "фабрик", "комбинат", "facility"],
+                "Expert": ["эксперт", "автор", "лаборатор"],
             }
             for etype, keywords in entity_types.items():
                 if any(kw in q for kw in keywords):

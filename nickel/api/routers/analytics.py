@@ -33,6 +33,7 @@ class OntologyGapRequest(BaseModel):
     process: Optional[str] = None
     climate: Optional[str] = None
     domain: Optional[str] = None
+    auto: bool = Field(default=False, description="Авто-обнаружение пробелов из графа")
 
 
 class CompareRequest(BaseModel):
@@ -69,13 +70,15 @@ async def knowledge_gaps(
     material: Optional[str] = None,
     process: Optional[str] = None,
     climate: Optional[str] = None,
+    auto: bool = True,
     user=Depends(get_current_user),
 ):
     check_permission(user, "read")
-    audit_action(user, "analytics.gaps", details={"query": query, "domain": domain})
+    audit_action(user, "analytics.gaps", details={"query": query, "domain": domain, "auto": auto})
     return await run_search(
         find_knowledge_gaps,
         domain=domain, query=query, material=material, process=process, climate=climate,
+        auto=auto,
     )
 
 

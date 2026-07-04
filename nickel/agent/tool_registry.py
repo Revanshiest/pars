@@ -80,7 +80,7 @@ def select_tools(question: str) -> List[Dict[str, Any]]:
     if any(w in q for w in ["сколько факт", "статистик", "объём баз", "сколько документ"]):
         plan.append({"name": "knowledge_stats", "arguments": {}})
 
-    # Извлечь именованную сущность для графа (Cerro Verde, медь, Copper)
+    # Именованная сущность для обхода графа — через токены запроса
     if not any(p["name"] == "explore_graph" for p in plan):
         from services.query_tokens import extract_search_terms
         terms = extract_search_terms(question)

@@ -119,9 +119,13 @@ export const api = {
 
   knowledgeGaps: (auth, params = {}) => {
     const q = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => { if (v) q.set(k, v) })
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') q.set(k, String(v))
+    })
     return request(`/api/v1/analytics/gaps?${q}`, auth)
   },
+
+  searchExamples: (auth) => request('/api/v1/search/examples', auth),
 
   ontologyGaps: (auth, body) =>
     request('/api/v1/analytics/gaps/ontology', { ...auth, method: 'POST', body }),

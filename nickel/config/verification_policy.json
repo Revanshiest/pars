@@ -1,0 +1,16 @@
+{
+  "default_confidence": 0.7,
+  "manual_edit_confidence": 0.9,
+  "json_import_confidence": 0.85,
+  "verified_boost": 0.15,
+  "doi_boost": 0.05,
+  "page_boost": 0.03,
+  "internal_unverified_penalty": 0.05,
+  "expert_min_confidence": 0.7,
+  "tiers": {
+    "high": 0.85,
+    "medium": 0.65,
+    "medium_unverified_confidence": 0.75,
+    "low": 0.5
+  }
+}

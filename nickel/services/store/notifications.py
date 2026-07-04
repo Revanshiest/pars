@@ -4,7 +4,38 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
+
+
+def _topic_tokens(text: str) -> Set[str]:
+    return {t.lower() for t in text.replace(",", " ").split() if len(t) > 2}
+
+
+def _subscription_match(sub_topic: str, keywords: List[str], filters: dict) -> bool:
+    topic_l = sub_topic.lower()
+    topic_tokens = _topic_tokens(sub_topic)
+
+    try:
+        from services.glossary import expand_query_with_glossary
+        expanded = expand_query_with_glossary(sub_topic, use_bge=False)
+        topic_tokens |= _topic_tokens(expanded.get("expanded", sub_topic))
+        for syn in expanded.get("synonyms_added") or []:
+            topic_tokens.add(syn.lower())
+    except Exception:
+        pass
+
+    for kw in keywords:
+        kl = kw.lower()
+        if kl in topic_l or topic_l in kl:
+            return True
+        if kl in topic_tokens or any(kl in t or t in kl for t in topic_tokens if len(t) > 2):
+            return True
+
+    filter_geo = (filters or {}).get("geography")
+    if filter_geo:
+        return any(filter_geo.lower() in kw.lower() for kw in keywords)
+
+    return False
 
 
 class NotificationsMixin:
@@ -59,6 +90,6 @@ class NotificationsMixin:
         with self._connect() as conn:
             subs = conn.execute("SELECT * FROM subscriptions WHERE active=1").fetchall()
             for sub in subs:
-                topic = sub["topic"].lower()
-                if any(kw.lower() in topic or topic in kw.lower() for kw in topic_keywords):
+                filters = json.loads(sub["filters"] or "{}")
+                if _subscription_match(sub["topic"], topic_keywords, filters):
                     self.create_notification(sub["user_id"], title, body)

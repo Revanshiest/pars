@@ -1,17 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  BarChart3, Loader2, BookOpen, GitCompare, Download, AlertTriangle, Sparkles,
+  BarChart3, Loader2, BookOpen, GitCompare, Download, AlertTriangle, Sparkles, RefreshCw,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../api/client'
-
-const GAP_PRESETS = [
-  { material: 'никель', process: 'выщелачивание', climate: 'холодный', label: 'Холод + HL + Ni' },
-  { material: 'никель', process: 'электроэкстракция', climate: 'холодный', label: 'Холод + EW + Ni' },
-  { material: 'медь', process: 'электроэкстракция', geography: 'global', label: 'EW медь' },
-  { query: 'шахтные воды закачка', label: 'Шахтные воды' },
-]
 
 const CAN_SYNTHESIS = new Set(['analyst', 'project_manager', 'admin'])
 const CAN_DASHBOARD = new Set(['researcher', 'analyst', 'project_manager', 'admin'])
@@ -26,6 +19,7 @@ export default function AnalyticsPage() {
   const [techs, setTechs] = useState('heap leaching, electrowinning, fluidized bed')
   const [dashboard, setDashboard] = useState(null)
   const [gaps, setGaps] = useState(null)
+  const [gapPresets, setGapPresets] = useState([])
   const [review, setReview] = useState(null)
   const [compare, setCompare] = useState(null)
   const [exportMsg, setExportMsg] = useState('')
@@ -40,20 +34,31 @@ export default function AnalyticsPage() {
     }
   }, [tab, auth, user?.role])
 
-  const runGaps = async (preset) => {
+  const runGaps = useCallback(async (preset = { auto: true }) => {
     setLoading(true)
     setError('')
     try {
       const data = preset.query
-        ? await api.knowledgeGaps(auth, { query: preset.query })
-        : await api.ontologyGaps(auth, preset)
+        ? await api.knowledgeGaps(auth, { query: preset.query, auto: false })
+        : preset.material || preset.process || preset.climate
+          ? await api.ontologyGaps(auth, { ...preset, auto: false })
+          : await api.knowledgeGaps(auth, { auto: true, ...preset })
       setGaps(data)
+      if (data?.suggested_presets?.length) {
+        setGapPresets(data.suggested_presets)
+      }
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
-  }
+  }, [auth])
+
+  useEffect(() => {
+    if (tab === 'gaps' && !gaps && !loading) {
+      runGaps({ auto: true })
+    }
+  }, [tab, gaps, loading, runGaps])
 
   const runReview = async (e) => {
     e.preventDefault()
@@ -121,22 +126,51 @@ export default function AnalyticsPage() {
             </div>
           )}
           {dashboard && (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            ['Фактов', dashboard.facts_total],
-            ['Verified', dashboard.verified],
-            ['Pending', dashboard.pending_verification],
-            ['Противоречий', dashboard.contradictions],
-            ['Глоссарий', dashboard.glossary_terms],
-          ].map(([l, v]) => (
-            <div key={l} className="card p-4 text-center">
-              <div className="text-2xl font-black text-brand-600">{v ?? 0}</div>
-              <div className="text-xs text-surface-400">{l}</div>
+        <div className="space-y-4">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              ['Фактов', dashboard.facts_total],
+              ['Verified', dashboard.verified],
+              ['Pending', dashboard.pending_verification],
+              ['Противоречий', dashboard.contradictions],
+              ['Глоссарий', dashboard.glossary_terms],
+            ].map(([l, v]) => (
+              <div key={l} className="card p-4 text-center">
+                <div className="text-2xl font-black text-brand-600">{v ?? 0}</div>
+                <div className="text-xs text-surface-400">{l}</div>
+              </div>
+            ))}
+          </div>
+
+          {dashboard.domain_coverage && Object.keys(dashboard.domain_coverage).length > 0 && (
+            <div className="card p-4">
+              <h4 className="text-sm font-bold mb-3">Покрытие по направлениям R&D</h4>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {Object.entries(dashboard.domain_coverage).map(([key, d]) => (
+                  <div key={key} className="rounded-lg border border-surface-800 p-3">
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="text-sm font-medium text-surface-100">{d.label || key}</span>
+                      <span className={clsx(
+                        'text-[10px] px-2 py-0.5 rounded-full border',
+                        d.risk
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                      )}>
+                        {Math.round((d.coverage_ratio || 0) * 100)}%
+                      </span>
+                    </div>
+                    <p className="text-xs text-surface-400 mt-1">
+                      Процессов: {d.processes_covered}/{d.processes_total} · фактов: {d.facts_matched}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
+          )}
+
           {dashboard.risk_zones_low_coverage?.length > 0 && (
-            <div className="card p-4 sm:col-span-2 lg:col-span-4">
-              <h4 className="text-sm font-bold mb-2">Зоны риска (мало данных)</h4>
+            <div className="card p-4">
+              <h4 className="text-sm font-bold mb-2">Зоны риска (мало данных по типам сущностей)</h4>
               <div className="flex flex-wrap gap-2">
                 {dashboard.risk_zones_low_coverage.map(d => (
                   <span key={d.subject_type} className="badge bg-amber-50 text-amber-700 border border-amber-200">
@@ -153,26 +187,37 @@ export default function AnalyticsPage() {
 
       {tab === 'gaps' && (
         <div className="space-y-4">
-          <p className="text-sm text-surface-400">
-            Выявление неизученных комбинаций «материал × процесс × условие × география».
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {GAP_PRESETS.map(p => (
-              <button key={p.label} type="button" className="btn-secondary text-xs" disabled={loading}
-                onClick={() => runGaps(p)}>
-                {p.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-surface-400">
+              Автоматический анализ комбинаций «материал × процесс × география» из графа знаний.
+            </p>
+            <button type="button" className="btn-secondary text-xs flex items-center gap-1" disabled={loading}
+              onClick={() => runGaps({ auto: true })}>
+              <RefreshCw size={12} /> Обновить
+            </button>
           </div>
+          {gapPresets.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {gapPresets.map((p, idx) => (
+                <button key={p.label || idx} type="button" className="btn-secondary text-xs" disabled={loading}
+                  onClick={() => runGaps(p)}>
+                  {p.label || 'Сценарий'}
+                </button>
+              ))}
+            </div>
+          )}
           {loading && <Loader2 className="animate-spin-slow text-brand-600" />}
           {gaps && (
             <div className="card p-5 space-y-3">
-              {(gaps.ontology_gaps || (gaps.label ? [gaps] : [])).slice(0, 3).map((g, idx) => (
+              <p className="text-xs text-surface-500">
+                Проанализировано сценариев: {gaps.scenarios_analyzed ?? '—'} · критических пробелов: {gaps.critical_gaps ?? 0}
+              </p>
+              {(gaps.ontology_gaps || []).slice(0, 8).map((g, idx) => (
                 <div key={g.scenario_id || g.label || idx} className="border-b border-surface-800 pb-3 last:border-0">
                   <h3 className="text-sm font-bold text-surface-100">{g.label}</h3>
                   <p className={clsx('text-sm mt-1', g.is_gap ? 'text-amber-600' : 'text-emerald-600')}>
-                    {g.is_gap ? `⚠ Пробел (${g.gap_severity})` : '✓ Данные найдены'}
-                    {g.full_overlap_facts != null && ` · совпадений: ${g.full_overlap_facts}`}
+                    {g.is_gap ? `Пробел (${g.gap_severity})` : 'Данные найдены'}
+                    {g.full_overlap_facts != null && ` · полных совпадений: ${g.full_overlap_facts}`}
                   </p>
                   {g.recommendation && (
                     <p className="text-xs text-surface-400 mt-2">{g.recommendation}</p>
@@ -238,13 +283,14 @@ export default function AnalyticsPage() {
       )}
 
       {compare?.comparison && (
-        <div className="card p-5 overflow-x-auto">
+        <div className="card p-5 overflow-x-auto space-y-4">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-surface-400 border-b">
                 <th className="pb-2">Технология</th>
                 <th className="pb-2">Фактов</th>
                 <th className="pb-2">Verified</th>
+                <th className="pb-2">Параметры</th>
                 <th className="pb-2">Географии</th>
               </tr>
             </thead>
@@ -254,13 +300,18 @@ export default function AnalyticsPage() {
                   <td className="py-2 font-medium">{name}</td>
                   <td className="py-2">{t.facts_count ?? '—'}</td>
                   <td className="py-2">{t.verified_count ?? '—'}</td>
+                  <td className="py-2 text-xs">
+                    {t.parameters && Object.keys(t.parameters).length > 0
+                      ? Object.keys(t.parameters).slice(0, 4).join(', ')
+                      : '—'}
+                  </td>
                   <td className="py-2 text-xs">{(t.geographies || []).join(', ') || '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           {compare.recommendation && (
-            <p className="text-xs text-surface-400 mt-3">{compare.recommendation}</p>
+            <p className="text-xs text-surface-400">{compare.recommendation}</p>
           )}
         </div>
       )}
