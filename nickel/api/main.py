@@ -39,6 +39,7 @@ from api.routers.glossary import router as glossary_router
 from api.routers.graph import router as graph_router
 from api.routers.notifications import router as notifications_router
 from api.routers.search import router as search_router
+from api.routers.system import router as system_router
 from api.routers.verification import router as verification_router
 from agent.search_agent import KnowledgeAgent
 from ontology.schema import NODE_TYPES, RELATIONS
@@ -143,6 +144,7 @@ app.include_router(graph_router)
 app.include_router(notifications_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.include_router(system_router)
 
 ADMIN_STATIC = Path(__file__).resolve().parent / "static" / "admin"
 if ADMIN_STATIC.is_dir():
@@ -253,59 +255,6 @@ async def _run_batch_job(
         )
     else:
         job_store.complete_job(batch_id, summary)
-
-
-@app.get("/health", response_model=HealthResponse)
-async def health():
-    from services.health import check_health
-
-    report = check_health()
-    comps = report.to_dict()["components"]
-    return HealthResponse(
-        status=report.status,
-        neo4j=comps.get("neo4j", {}).get("detail"),
-        qdrant=comps.get("qdrant", {}).get("detail"),
-        components=comps,
-        timestamp=report.timestamp,
-    )
-
-
-@app.get("/ready", response_model=HealthResponse)
-async def ready():
-    from services.health import check_readiness
-
-    report = check_readiness()
-    comps = report.to_dict()["components"]
-    if report.status == "unavailable":
-        raise HTTPException(503, detail=report.to_dict())
-    return HealthResponse(
-        status=report.status,
-        components=comps,
-        timestamp=report.timestamp,
-    )
-
-
-@app.get("/live")
-async def live():
-    from services.health import check_liveness
-
-    return check_liveness()
-
-
-@app.get("/metrics")
-async def metrics():
-    """JSON-метрики для мониторинга (Prometheus-совместимый формат опционально)."""
-    from services.health import check_health
-
-    report = check_health()
-    store = get_store()
-    facts_count = len(store.list_facts(limit=10000))
-    return {
-        "status": report.status,
-        "facts_total": facts_count,
-        "users_total": store.auth_status().get("users_count", 0),
-        "components": report.to_dict()["components"],
-    }
 
 
 @app.post("/api/v1/documents/upload", response_model=JobResponse)
@@ -494,31 +443,3 @@ async def agent_search(req: AgentQueryRequest, user=Depends(get_current_user)):
     return AgentQueryResponse(**result)
 
 
-@app.get("/api/v1/graph/stats")
-async def graph_stats(user=Depends(get_current_user)):
-    check_permission(user, "read")
-    audit_action(user, "read.graph.stats")
-    from services.graph_view import entity_node_id
-    from services.health import is_degraded_ok
-
-    store = get_store()
-    facts = store.list_facts(role=user.get("role"), limit=50000)
-    entities: set[str] = set()
-    for f in facts:
-        entities.add(entity_node_id(f["subject"], f.get("subject_type") or "Concept"))
-        entities.add(entity_node_id(f["object"], f.get("object_type") or "Concept"))
-    sqlite_stats = {"entities": len(entities), "relationships": len(facts), "source": "sqlite"}
-
-    if is_degraded_ok("search_graph"):
-        try:
-            with Neo4jLoader() as loader:
-                neo = loader.stats()
-                return {**neo, "sqlite": sqlite_stats}
-        except Exception:
-            pass
-    return sqlite_stats
-
-
-@app.get("/api/v1/ontology")
-async def get_ontology():
-    return {"node_types": NODE_TYPES, "relations": RELATIONS}
