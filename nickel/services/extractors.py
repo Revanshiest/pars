@@ -34,7 +34,7 @@ class OllamaExtractorAdapter:
 
 class YandexExtractorAdapter:
     def __init__(self):
-        from orchestrator import YandexExtractor
+        from services.yandex_extractor import YandexExtractor
         self._api = YandexExtractor()
 
     async def extract_triples(self, text: str, meta_context: str) -> List[dict]:

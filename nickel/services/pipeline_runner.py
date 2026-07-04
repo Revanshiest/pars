@@ -77,7 +77,7 @@ async def _extract_from_text_document(
     if on_progress:
         on_progress("ingest", 1, 1, f"Разбито на {len(chunks)} чанков")
 
-    from orchestrator import should_process_chunk
+    from services.yandex_extractor import should_process_chunk
 
     all_triples: List[Dict[str, Any]] = []
     is_ollama = type(extractor).__name__ == "OllamaExtractorAdapter"
