@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -32,9 +33,17 @@ RELATION_URI = {
 CLASS_URI = {t: KG[t] for t in NODE_TYPES}
 
 
+def _uri_slug(name: str, max_len: int = 40) -> str:
+    """Path-safe ASCII slug; original label is stored in kg:label."""
+    s = name.replace(" ", "_")
+    s = re.sub(r"[^\w\-.]", "_", s, flags=re.UNICODE)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return (s[:max_len] or "entity")
+
+
 def _entity_uri(name: str, entity_type: str) -> URIRef:
     slug = hashlib.md5(f"{entity_type}:{name}".encode()).hexdigest()[:12]
-    safe = name.replace(" ", "_")[:40]
+    safe = _uri_slug(name)
     return URIRef(f"http://rd.nickel.local/entity/{entity_type}/{safe}_{slug}")
 
 
