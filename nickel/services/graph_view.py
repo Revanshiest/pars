@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 from typing import Any, Dict, List, Optional
 
 from services.glossary import normalize_entity
@@ -314,7 +315,7 @@ def load_graph_view(
             },
         })
 
-    fetch_limit: Optional[int] = None if limit == 0 else min(max(limit * 20, limit), 15000)
+    fetch_limit: Optional[int] = None if limit == 0 else min(max(limit * 20, limit), int(os.getenv("GRAPH_FETCH_LIMIT", "5000")))
     facts = store.list_facts(
         source_document=source_document,
         query=entity_name,

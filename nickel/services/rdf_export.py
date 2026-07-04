@@ -32,19 +32,44 @@ RELATION_URI = {
 
 CLASS_URI = {t: KG[t] for t in NODE_TYPES}
 
+_ONTOLOGY_PROP_KEYS = frozenset({
+    "label", "confidence", "geographyTag", "sourceDocument", "sourceChunk",
+    "sourcePage", "doi", "updatedAt", "version", "validFrom",
+})
 
-def _uri_slug(name: str, max_len: int = 40) -> str:
-    """Path-safe ASCII slug; original label is stored in kg:label."""
-    s = name.replace(" ", "_")
-    s = re.sub(r"[^\w\-.]", "_", s, flags=re.UNICODE)
-    s = re.sub(r"_+", "_", s).strip("_")
-    return (s[:max_len] or "entity")
+_SNAKE_TO_CAMEL = {
+    "source_page": "sourcePage",
+    "source_chunk": "sourceChunk",
+    "updated_at": "updatedAt",
+    "valid_from": "validFrom",
+    "geography_tag": "geographyTag",
+    "source_document": "sourceDocument",
+}
+
+_SKIP_PROP_KEYS = frozenset({
+    "doi", "updated_at", "valid_from", "source_page", "source_chunk", "fair",
+})
 
 
 def _entity_uri(name: str, entity_type: str) -> URIRef:
-    slug = hashlib.md5(f"{entity_type}:{name}".encode()).hexdigest()[:12]
-    safe = _uri_slug(name)
-    return URIRef(f"http://rd.nickel.local/entity/{entity_type}/{safe}_{slug}")
+    """Стабильный ASCII-only URI; человекочитаемое имя хранится в kg:label."""
+    slug = hashlib.md5(f"{entity_type}:{name}".encode("utf-8")).hexdigest()[:12]
+    et = re.sub(r"[^\w]", "_", entity_type)
+    return URIRef(f"http://rd.nickel.local/entity/{et}/{slug}")
+
+
+def _property_uri(key: str) -> URIRef:
+    """Безопасный URI предиката: кириллица и пробелы → hash, не fragment kg#."""
+    camel = _SNAKE_TO_CAMEL.get(key, key)
+    if camel in _ONTOLOGY_PROP_KEYS:
+        return KG[camel]
+    digest = hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
+    return URIRef(f"http://rd.nickel.local/prop/{digest}")
+
+
+def _is_dynamic_property(key: str) -> bool:
+    camel = _SNAKE_TO_CAMEL.get(key, key)
+    return camel not in _ONTOLOGY_PROP_KEYS
 
 
 def triples_to_graph(
@@ -76,7 +101,12 @@ def triples_to_graph(
 
         props = t.get("properties") or {}
         for key, val in props.items():
-            g.add((subj_uri, KG[key], Literal(str(val))))
+            if key in _SKIP_PROP_KEYS or val is None:
+                continue
+            prop_uri = _property_uri(key)
+            g.add((subj_uri, prop_uri, Literal(str(val))))
+            if _is_dynamic_property(key):
+                g.add((prop_uri, RDFS.label, Literal(key)))
 
         if t.get("confidence") is not None:
             g.add((subj_uri, KG.confidence, Literal(float(t["confidence"]), datatype=XSD.float)))

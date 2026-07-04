@@ -8,23 +8,24 @@ from typing import Any, Dict, List, Optional
 from agent.tool_registry import catalog_for_prompt, select_tools
 from agent.tools import SearchTools
 from services.fact_format import fact_display_fields, format_fact_answer
+from services.logging_config import get_logger
+from services.user_messages import Msg
 from services.yandex_llm import yandex_complete
 
+logger = get_logger(__name__)
 
-SYNTHESIS_SYSTEM = """Ты — эксперт-аналитик R&D в горно-металлургии (медь, никель, процессы, оборудование).
-Отвечай на русском языке, как коллеге-инженеру.
 
-Обязательный формат ответа:
-1. Первое предложение — прямой ответ на вопрос (с числом и единицей, если спрашивали о параметре).
-2. Далее 1–2 предложения пояснения из контекста.
-3. Строка «Источники: …» — только названия документов.
+SYNTHESIS_SYSTEM = """Ты — ведущий аналитик R&D в горно-металлургии (никель, медь, гидро- и пирометаллургия).
+Отвечай на русском языке развёрнуто и профессионально, как опытному инженеру-коллеге.
 
-Запрещено:
-- Нумерованные списки и фразы «Нашёл в базе знаний», «Результаты поиска».
-- JSON, score, названия инструментов (search_facts и т.д.).
-- Выдумывать факты, которых нет в контексте.
+Структура ответа (4–8 предложений, связный текст без нумерации):
+1. Прямой ответ на вопрос — с числами, единицами и формулировками из контекста.
+2. Контекст: что известно из источников, какие процессы/условия упоминаются.
+3. Ограничения: если данных мало, честно укажи пробелы и что стоит догрузить в базу.
+4. Заверши строкой «Источники: …» — перечисли названия документов через запятую.
 
-Если данных недостаточно — скажи прямо, чего не хватает."""
+Запрещено: JSON, score, названия инструментов, фразы «найдено в базе», «результаты поиска».
+Не выдумывай факты — опирайся только на предоставленный контекст."""
 
 
 class YandexKnowledgeAgent:
@@ -165,7 +166,7 @@ class YandexKnowledgeAgent:
                 parts.append("Только RU: " + ", ".join(comp["ru_only_topics"][:5]))
             if comp.get("global_only_topics"):
                 parts.append("Только global: " + ", ".join(comp["global_only_topics"][:5]))
-            return "[compare_practices]\n" + "\n".join(parts)
+            return "Сравнение отечественной и мировой практики:\n" + "\n".join(parts)
 
         if tool_name == "numeric_search":
             rows = result.get("results") or []
@@ -174,7 +175,7 @@ class YandexKnowledgeAgent:
                 props = r.get("properties") or r.get("matched_constraint") or {}
                 val = props.get("value") or props.get("description") or ""
                 lines.append(f"- {r.get('subject')} → {r.get('object')}: {val}")
-            return f"[numeric_search] {len(rows)} фактов:\n" + ("\n".join(lines) if lines else "нет")
+            return f"Числовые параметры ({len(rows)} записей):\n" + ("\n".join(lines) if lines else "нет")
 
         if tool_name == "explore_graph":
             edges = result.get("edges") or []
@@ -182,7 +183,7 @@ class YandexKnowledgeAgent:
                 f"- {e.get('source')} —[{e.get('relation')}]-> {e.get('target')}"
                 for e in edges[:15]
             ]
-            return f"[explore_graph] Сущность «{result.get('entity')}», связей {len(edges)}:\n" + (
+            return f"Связи сущности «{result.get('entity')}» ({len(edges)}):\n" + (
                 "\n".join(lines) if lines else "нет связей"
             )
 
@@ -246,22 +247,27 @@ class YandexKnowledgeAgent:
 
         tools_used = [s["name"] for s in plan]
         context_text = "\n\n".join(context_blocks) if context_blocks else "Контекст пуст."
+        sources = self._collect_sources(tool_results)
 
         user_prompt = (
             f"Вопрос пользователя:\n{question}\n\n"
-            f"--- Данные из базы знаний (используй только их) ---\n{context_text}\n\n"
-            f"Дай прямой ответ на вопрос. Без нумерованных списков."
+            f"--- Данные из базы знаний ---\n{context_text}\n\n"
+            f"Дай развёрнутый ответ (4–8 предложений). Без нумерованных списков."
         )
 
         try:
-            answer = await yandex_complete(SYNTHESIS_SYSTEM, user_prompt, temperature=0.25)
+            answer = await yandex_complete(SYNTHESIS_SYSTEM, user_prompt, temperature=0.35)
             llm_ok = True
         except Exception as exc:
-            answer = self._fallback_answer(question, tool_results, str(exc))
+            logger.warning("YandexGPT unavailable: %s", exc)
+            answer = self._fallback_answer(question, tool_results)
             llm_ok = False
 
-        sources = self._collect_sources(tool_results)
-        confidence = min(0.95, 0.4 + 0.05 * len(sources))
+        if not sources:
+            answer = Msg.AGENT_NO_DATA
+            confidence = 0.0
+        else:
+            confidence = round(min(0.95, 0.4 + 0.05 * len(sources)), 2)
 
         return {
             "question": question,
@@ -280,14 +286,17 @@ class YandexKnowledgeAgent:
         self,
         question: str,
         tool_results: List[Dict[str, Any]],
-        error: str,
     ) -> str:
-        lines = [f"YandexGPT недоступен ({error}). Данные из базы знаний:\n"]
+        parts = [Msg.AGENT_LLM_DOWN, ""]
+        has_data = False
         for tr in tool_results:
-            lines.append(self._format_tool_context(tr["tool"], tr["result"], question))
-        if len(lines) == 1:
-            return "Не удалось получить данные. Проверьте YANDEX_API_KEY и YANDEX_FOLDER_ID."
-        return "\n\n".join(lines)
+            block = self._format_tool_context(tr["tool"], tr["result"], question)
+            if "нет данных" not in block.lower():
+                has_data = True
+            parts.append(block)
+        if not has_data:
+            return Msg.AGENT_NO_DATA
+        return "\n\n".join(parts)
 
 
 def _result_count(result: Dict[str, Any]) -> int:

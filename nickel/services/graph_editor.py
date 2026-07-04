@@ -7,8 +7,11 @@ from typing import Any, Dict, List, Optional
 
 from ontology.schema import filter_valid_triples, is_valid_triple
 from services.platform_config import verification_policy
+from services.logging_config import get_logger
 from services.neo4j_loader import Neo4jLoader
 from services.store import get_store
+
+logger = get_logger(__name__)
 
 
 def add_triple(triple: Dict[str, Any], user_id: str, comment: str = "") -> Dict[str, Any]:
@@ -30,8 +33,8 @@ def add_triple(triple: Dict[str, Any], user_id: str, comment: str = "") -> Dict[
     try:
         with Neo4jLoader() as loader:
             loader.load_triples([triple], source_document="expert_edit")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Neo4j sync after manual add failed: %s", exc)
 
     return triple
 

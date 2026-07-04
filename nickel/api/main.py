@@ -1,8 +1,4 @@
-"""FastAPI-приложение Nickel: инициализация, middleware, lifespan, роутеры.
-
-Бизнес-логика эндпоинтов вынесена в api/routers/*, общий рантайм
-(JobStore, агент, фоновый пайплайн) — в api/runtime.py.
-"""
+"""FastAPI-приложение Nickel: инициализация, middleware, lifespan, роутеры."""
 
 from __future__ import annotations
 
@@ -11,12 +7,23 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+load_dotenv()
+
+from services.logging_config import get_logger, setup_logging
+
+setup_logging()
+logger = get_logger(__name__)
+
+from services.security_bootstrap import cors_origins, docs_enabled, validate_secrets
+
+validate_secrets()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-load_dotenv()
-
+from api.middleware.rate_limit import RateLimitMiddleware
 from api.middleware.security import AuditMiddleware, SecurityHeadersMiddleware
 from api.routers.admin import router as admin_router
 from api.routers.analytics import router as analytics_router
@@ -49,50 +56,57 @@ async def lifespan(app: FastAPI):
     store = get_store()
     seeded = store.seed_glossary_from_file(ONTOLOGY_DIR / "glossary_seed.json")
     glossary_total = store.count_glossary()
-    if seeded:
-        print(f"Glossary: seeded {seeded} terms from glossary_seed.json ({glossary_total} total)")
-    else:
-        print(f"Glossary: {glossary_total} terms in store")
+    logger.info("Glossary: %s terms (%s seeded from seed file)", glossary_total, seeded)
 
     try:
         bootstrap_admin_from_env()
     except ValueError as exc:
-        print(f"Auth: invalid AUTH_ADMIN — {exc}")
+        logger.error("Invalid AUTH_ADMIN: %s", exc)
 
     auth_status = store.auth_status()
     spec = env_admin_spec()
     if spec:
-        print(f"Auth: admin from .env ({spec['email']}); other users via /admin/")
+        logger.info("Auth: admin from .env (%s)", spec["email"])
     elif auth_status["setup_required"]:
-        print("Auth: set AUTH_ADMIN=email|name|api_key in .env (or POST /api/v1/auth/setup for dev)")
+        logger.warning("Auth: no users — set AUTH_ADMIN or use setup endpoint in dev")
     else:
-        print(f"Auth: {auth_status['users_count']} users in SQLite (manage via /admin/)")
+        logger.info("Auth: %s users in store", auth_status["users_count"])
 
     try:
         with Neo4jLoader() as loader:
             loader.init_schema()
-    except Exception:
-        pass
+        logger.info("Neo4j schema initialized")
+    except Exception as exc:
+        logger.warning("Neo4j unavailable at startup: %s", exc)
 
     stale = job_store.reconcile_stale_jobs()
     if stale:
-        print(f"Jobs: reconciled {stale} stale task(s) after restart")
+        logger.info("Reconciled %s stale job(s) after restart", stale)
 
     yield
 
 
-app = FastAPI(
-    title="Nickel R&D Knowledge Graph API",
-    description="KG pipeline, glossary, verification, RBAC, analytics, export",
-    version="0.2.0",
-    lifespan=lifespan,
-)
+_app_kwargs = {
+    "title": "Nickel R&D Knowledge Graph API",
+    "description": "Карта знаний R&D: импорт, поиск, верификация, аналитика",
+    "version": "0.3.0",
+    "lifespan": lifespan,
+}
+if not docs_enabled():
+    _app_kwargs["docs_url"] = None
+    _app_kwargs["redoc_url"] = None
+    _app_kwargs["openapi_url"] = None
 
+app = FastAPI(**_app_kwargs)
+
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(AuditMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+_origins = cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins if _origins else ["http://localhost:3000"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

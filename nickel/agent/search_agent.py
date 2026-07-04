@@ -298,7 +298,7 @@ class KnowledgeAgent:
 
         ranked = [self._enrich_fact_item(i) for i in self._collect_ranked(tool_results)]
         answer = self._synthesize(question, tool_results)
-        confidence = min(0.95, 0.35 + 0.05 * len(ranked))
+        confidence = 0.0 if not ranked else round(min(0.95, 0.35 + 0.05 * len(ranked)), 2)
 
         return {
             "question": question,

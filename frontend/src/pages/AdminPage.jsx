@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Shield, UserPlus, RefreshCw, KeyRound, Trash2, Loader2, Copy, Check } from 'lucide-react'
+import { Shield, UserPlus, RefreshCw, KeyRound, Trash2, Loader2, Copy, Check, ScrollText, FileKey2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../api/client'
@@ -36,8 +36,11 @@ function KeyReveal({ apiKey, onDismiss }) {
 
 export default function AdminPage() {
   const { auth, user } = useAuth()
+  const [tab, setTab] = useState('users')
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
+  const [audit, setAudit] = useState([])
+  const [documents, setDocuments] = useState([])
   const [envAdminEmail, setEnvAdminEmail] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -70,9 +73,37 @@ export default function AdminPage() {
     }
   }, [auth])
 
+  const loadAudit = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const rows = await api.listAuditLog(auth, { limit: 100 })
+      setAudit(Array.isArray(rows) ? rows : [])
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [auth])
+
+  const loadDocuments = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await api.listDocuments(auth, { limit: 200 })
+      setDocuments(res.documents || [])
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [auth])
+
   useEffect(() => {
-    load()
-  }, [load])
+    if (tab === 'users') load()
+    else if (tab === 'audit') loadAudit()
+    else if (tab === 'documents') loadDocuments()
+  }, [tab, load, loadAudit, loadDocuments])
 
   const flash = (msg) => {
     setSuccess(msg)
@@ -139,7 +170,37 @@ export default function AdminPage() {
     }
   }
 
+  const changeDocAccess = async (sourceDocument, access_level) => {
+    setError('')
+    try {
+      await api.setDocumentAccess(auth, sourceDocument, access_level)
+      flash('Уровень доступа обновлён')
+      await loadDocuments()
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
   const assignableRoles = roles.map(r => r.role)
+
+  const ACTION_LABELS = {
+    'auth.token': 'Вход в систему',
+    'search.agent': 'Запрос к ассистенту',
+    'document.upload': 'Загрузка документа',
+    'admin.create_user': 'Создание пользователя',
+    'admin.update_user': 'Изменение пользователя',
+    'admin.delete_user': 'Удаление пользователя',
+    'admin.rotate_key': 'Смена ключа',
+    'admin.document_access': 'Изменение доступа к документу',
+    'job.cancel': 'Отмена обработки',
+    'fact.verify': 'Верификация факта',
+  }
+
+  const ACCESS_LABELS = {
+    internal: 'Внутренний',
+    partner: 'Партнёрский',
+    public: 'Публичный',
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -155,9 +216,27 @@ export default function AdminPage() {
             </p>
           </div>
         </div>
-        <button type="button" className="btn-ghost text-xs" onClick={load} disabled={loading}>
+        <button type="button" className="btn-ghost text-xs" onClick={() => {
+          if (tab === 'users') load()
+          else if (tab === 'audit') loadAudit()
+          else loadDocuments()
+        }} disabled={loading}>
           <RefreshCw size={13} className={clsx(loading && 'animate-spin-slow')} /> Обновить
         </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {[
+          ['users', UserPlus, 'Пользователи'],
+          ['audit', ScrollText, 'Журнал действий'],
+          ['documents', FileKey2, 'Доступ к документам'],
+        ].map(([id, Icon, label]) => (
+          <button key={id} type="button" onClick={() => setTab(id)}
+            className={clsx('flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border',
+              tab === id ? 'bg-brand-600 text-white border-brand-600' : 'border-surface-700')}>
+            <Icon size={13} /> {label}
+          </button>
+        ))}
       </div>
 
       {error && (
@@ -170,6 +249,8 @@ export default function AdminPage() {
         <KeyReveal apiKey={revealedKey} onDismiss={() => setRevealedKey('')} />
       )}
 
+      {tab === 'users' && (
+      <>
       <div className="card p-5 space-y-4">
         <h3 className="section-title text-sm flex items-center gap-2">
           <UserPlus size={16} /> Новый пользователь
@@ -270,7 +351,7 @@ export default function AdminPage() {
                           </select>
                         )}
                         {isEnvAdmin && (
-                          <span className="text-[10px] text-surface-400 ml-1">(.env)</span>
+                          <span className="text-[10px] text-surface-400 ml-1">(основной)</span>
                         )}
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-surface-400">
@@ -278,7 +359,7 @@ export default function AdminPage() {
                       </td>
                       <td className="px-4 py-3">
                         {isEnvAdmin ? (
-                          <span className="text-xs text-surface-400">ключ из AUTH_ADMIN</span>
+                          <span className="text-xs text-surface-400">ключ из конфигурации</span>
                         ) : (
                           <div className="flex items-center gap-2">
                             <button
@@ -310,19 +391,104 @@ export default function AdminPage() {
 
       {roles.length > 0 && (
         <div className="card p-5 space-y-3">
-          <h3 className="section-title text-sm">Роли и права</h3>
+          <h3 className="section-title text-sm">Роли</h3>
           <div className="space-y-2">
             {roles.map(r => (
               <div key={r.role} className="flex flex-wrap items-start gap-2 text-sm">
                 <span className="badge bg-surface-900 text-surface-300 border border-surface-700 shrink-0">
                   {r.role}
                 </span>
-                <span className="text-surface-400 text-xs leading-relaxed">
-                  {(r.permissions || []).join(', ')}
-                </span>
               </div>
             ))}
           </div>
+        </div>
+      )}
+      </>
+      )}
+
+      {tab === 'audit' && (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-4 border-b border-surface-700">
+            <h3 className="section-title text-sm">Журнал действий</h3>
+          </div>
+          {loading ? (
+            <div className="p-8 text-center text-surface-400 text-sm">
+              <Loader2 size={20} className="mx-auto animate-spin-slow mb-2" />
+              Загрузка…
+            </div>
+          ) : audit.length === 0 ? (
+            <div className="p-8 text-center text-surface-400 text-sm">Записей пока нет</div>
+          ) : (
+            <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-surface-900">
+                  <tr className="border-b border-surface-700">
+                    <th className="text-left px-4 py-3 label">Когда</th>
+                    <th className="text-left px-4 py-3 label">Действие</th>
+                    <th className="text-left px-4 py-3 label">Роль</th>
+                    <th className="text-left px-4 py-3 label">Объект</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {audit.map(row => (
+                    <tr key={row.id} className="border-b border-surface-700/50">
+                      <td className="px-4 py-2 text-xs text-surface-400 whitespace-nowrap">{row.created_at}</td>
+                      <td className="px-4 py-2">{ACTION_LABELS[row.action] || row.action}</td>
+                      <td className="px-4 py-2 text-xs">{row.user_role || '—'}</td>
+                      <td className="px-4 py-2 text-xs text-surface-400 truncate max-w-[200px]">{row.resource || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'documents' && (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-4 border-b border-surface-700">
+            <h3 className="section-title text-sm">Уровень доступа к документам</h3>
+          </div>
+          {loading ? (
+            <div className="p-8 text-center text-surface-400 text-sm">
+              <Loader2 size={20} className="mx-auto animate-spin-slow mb-2" />
+              Загрузка…
+            </div>
+          ) : documents.length === 0 ? (
+            <div className="p-8 text-center text-surface-400 text-sm">Документы не найдены</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-surface-700 bg-surface-900/50">
+                    <th className="text-left px-4 py-3 label">Документ</th>
+                    <th className="text-left px-4 py-3 label">Тип</th>
+                    <th className="text-left px-4 py-3 label">Доступ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {documents.map(doc => (
+                    <tr key={doc.source_document || doc.id} className="border-b border-surface-700/50">
+                      <td className="px-4 py-3 font-mono text-xs">{doc.source_document || doc.filename}</td>
+                      <td className="px-4 py-3 text-xs">{doc.document_kind || '—'}</td>
+                      <td className="px-4 py-3">
+                        <select
+                          className="input text-xs py-1 max-w-[160px]"
+                          value={doc.access_level || 'internal'}
+                          onChange={e => changeDocAccess(doc.source_document || doc.filename, e.target.value)}
+                        >
+                          {Object.entries(ACCESS_LABELS).map(([val, label]) => (
+                            <option key={val} value={val}>{label}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

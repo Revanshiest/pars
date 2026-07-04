@@ -179,6 +179,8 @@ async def run_full_pipeline(
     """Полный цикл с поддержкой PDF/DOCX/Excel и Yandex/Ollama."""
 
     def progress(stage: str, current: int, total: int, message: Optional[str] = None):
+        from services.job_cancel import check
+        check(job_id)
         if on_progress:
             on_progress(stage, current, total, message)
 

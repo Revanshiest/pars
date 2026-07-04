@@ -51,16 +51,19 @@ function AssistantMessage({ msg }) {
       <div className="flex-1 min-w-0">
         <div className="card p-4">
           <p className="text-sm text-surface-100 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-          {msg.llm_synthesized === false ? (
+          {msg.llm_synthesized === false && (
             <p className="text-[10px] text-amber-600 mt-3">
-              YandexGPT недоступен — показаны сырые данные из БД
+              Ответ составлен по данным базы без языковой модели
             </p>
-          ) : (
-            <p className="text-[10px] text-surface-400 mt-3">
-              YandexGPT
-              {msg.toolsUsed?.length > 0 && (
-                <span> · {msg.toolsUsed.join(', ')}</span>
-              )}
+          )}
+          {sources.length > 0 && (
+            <p className="text-[10px] text-surface-400 mt-2">
+              Ответ опирается на {sources.length} источник(ов) из загруженных документов
+            </p>
+          )}
+          {sources.length === 0 && (
+            <p className="text-[10px] text-surface-400 mt-2">
+              В базе знаний пока нет подтверждённых источников по этому вопросу
             </p>
           )}
         </div>
@@ -110,6 +113,7 @@ export default function SearchPage() {
   const [starters, setStarters] = useState(FALLBACK_STARTERS)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
+  const abortRef = useRef(null)
 
   useEffect(() => {
     api.searchExamples(auth)
@@ -131,31 +135,37 @@ export default function SearchPage() {
     const question = (text ?? input).trim()
     if (question.length < 2 || loading) return
 
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setInput('')
     setError('')
     setMessages(prev => [...prev, { role: 'user', content: question }])
     setLoading(true)
 
     try {
-      const data = await api.agentSearch(auth, question)
+      const data = await api.agentSearch(auth, question, { signal: controller.signal })
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: data.answer,
         sources: data.sources || data.ranked_results || [],
         confidence: data.confidence,
         llm_synthesized: data.llm_synthesized,
-        toolsUsed: data.tools_used || data.tool_calls?.map(t => t.tool) || [],
       }])
     } catch (err) {
+      if (err.name === 'AbortError') return
       setError(err.message)
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `Не удалось получить ответ: ${err.message}`,
+        content: 'Не удалось получить ответ. Попробуйте переформулировать вопрос или повторите запрос позже.',
         sources: [],
       }])
     } finally {
-      setLoading(false)
-      inputRef.current?.focus()
+      if (!controller.signal.aborted) {
+        setLoading(false)
+        inputRef.current?.focus()
+      }
     }
   }
 
@@ -173,7 +183,7 @@ export default function SearchPage() {
           Ассистент базы знаний
         </h2>
         <p className="text-xs text-surface-400 mt-1">
-          YandexGPT + инструменты базы знаний · не более 1 запроса к ИИ на ответ
+          Задайте вопрос по процессам, материалам и параметрам из загруженных отчётов и статей
         </p>
       </div>
 
@@ -213,7 +223,7 @@ export default function SearchPage() {
             </div>
             <div className="card p-4 flex items-center gap-2 text-sm text-surface-400">
               <Loader2 size={16} className="animate-spin-slow text-brand-600" />
-              Поиск в базе и генерация ответа YandexGPT…
+              Подбираю ответ по базе знаний…
             </div>
           </div>
         )}

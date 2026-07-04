@@ -125,7 +125,7 @@ export default function GlossaryPage() {
             Глоссарий
           </h2>
           <p className="text-xs text-surface-400 mt-1">
-            Термины RU/EN для нормализации сущностей и расширения поиска (BGE-m3)
+            Термины и синонимы для единообразного поиска по отраслевым документам
           </p>
         </div>
         <div className="flex gap-2">
@@ -147,7 +147,7 @@ export default function GlossaryPage() {
       <div className="card p-5">
         <h3 className="section-title text-sm flex items-center gap-2 mb-3">
           <Sparkles size={15} className="text-violet-500" />
-          Семантический поиск (BGE)
+          Семантический поиск по глоссарию
         </h3>
         <form onSubmit={runLookup} className="flex gap-2">
           <input
@@ -168,14 +168,14 @@ export default function GlossaryPage() {
               Совпадения для «{lookupResults.text}»:
             </p>
             {lookupResults.matches?.length === 0 && (
-              <p className="text-sm text-surface-400">Ничего не найдено (порог similarity 0.72)</p>
+              <p className="text-sm text-surface-400">Похожих терминов не найдено — попробуйте другую формулировку</p>
             )}
             {lookupResults.matches?.map(m => (
               <div key={m.canonical + m.matched_form} className="flex items-center gap-3 p-3 rounded-xl bg-surface-900 border border-surface-700">
                 <span className="text-sm font-semibold text-surface-100">{m.canonical}</span>
                 <span className="text-xs text-surface-400">← {m.matched_form}</span>
                 <span className="badge bg-violet-100 text-violet-700 border border-violet-200 ml-auto">
-                  {m.score}
+                  {Math.round((m.score || 0) * 100)}%
                 </span>
                 <span className="text-[10px] text-surface-400 uppercase">{m.lang}</span>
               </div>

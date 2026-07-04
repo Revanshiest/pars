@@ -108,11 +108,12 @@ export const api = {
       body: { query, limit: 15, ...extra },
     }),
 
-  agentSearch: (auth, question, { max_iterations = 5 } = {}) =>
+  agentSearch: (auth, question, { max_iterations = 5, signal } = {}) =>
     request('/api/v1/search/agent', {
       ...auth,
       method: 'POST',
       body: { question, max_iterations },
+      signal,
     }),
 
   dashboard: (auth) => request('/api/v1/dashboard', auth),
@@ -192,4 +193,23 @@ export const api = {
     request('/api/v1/glossary', { ...auth, method: 'POST', body }),
   glossaryLookup: (auth, text, top_k = 5) =>
     request('/api/v1/glossary/lookup', { ...auth, method: 'POST', body: { text, top_k } }),
+
+  listNotifications: (auth, unreadOnly = false) =>
+    request(`/api/v1/notifications?unread_only=${unreadOnly}`, auth),
+  markNotificationRead: (auth, id) =>
+    request(`/api/v1/notifications/${id}/read`, { ...auth, method: 'POST' }),
+
+  listAuditLog: (auth, { limit = 100 } = {}) =>
+    request(`/api/v1/audit?limit=${limit}`, auth),
+  listDocuments: (auth, { access_level, limit = 100 } = {}) => {
+    const q = new URLSearchParams({ limit })
+    if (access_level) q.set('access_level', access_level)
+    return request(`/api/v1/documents?${q}`, auth)
+  },
+  setDocumentAccess: (auth, sourceDocument, access_level) =>
+    request(`/api/v1/documents/${encodeURIComponent(sourceDocument)}/access`, {
+      ...auth,
+      method: 'PATCH',
+      body: { access_level },
+    }),
 }

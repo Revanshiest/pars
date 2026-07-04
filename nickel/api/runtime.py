@@ -1,8 +1,4 @@
-"""Общие рантайм-объекты API: хранилище задач, агент поиска, фоновый пайплайн.
-
-Вынесено из api/main.py, чтобы доменные роутеры (ingest, jobs, search)
-и стартовая логика приложения делили один и тот же JobStore/агент/executor.
-"""
+"""Общие рантайм-объекты API: хранилище задач, агент поиска, фоновый пайплайн."""
 
 from __future__ import annotations
 
@@ -13,14 +9,20 @@ from pathlib import Path
 
 from api.jobs import JobStore
 from agent.yandex_agent import YandexKnowledgeAgent
+from services.job_cancel import JobCancelled, clear, register
+from services.logging_config import get_logger
 from services.pipeline_runner import run_full_pipeline
+from services.user_messages import Msg
+
+logger = get_logger(__name__)
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "data/uploads")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "data/outputs")
 
 job_store = JobStore()
 search_agent = YandexKnowledgeAgent()
-_pipeline_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pipeline")
+_workers = max(1, int(os.getenv("PIPELINE_WORKERS", "2")))
+_pipeline_executor = ThreadPoolExecutor(max_workers=_workers, thread_name_prefix="pipeline")
 
 
 def _run_pipeline_in_thread(
@@ -29,17 +31,20 @@ def _run_pipeline_in_thread(
     extractor_backend: str | None,
     on_progress,
 ) -> dict:
-    """Тяжёлый пайплайн в отдельном потоке — не блокирует HTTP."""
-    return asyncio.run(
-        run_full_pipeline(
-            filepath,
-            job_id,
-            llm_extractor=None,
-            on_progress=on_progress,
-            output_dir=OUTPUT_DIR,
-            extractor_backend=extractor_backend or os.getenv("EXTRACTOR_BACKEND"),
+    register(job_id)
+    try:
+        return asyncio.run(
+            run_full_pipeline(
+                filepath,
+                job_id,
+                llm_extractor=None,
+                on_progress=on_progress,
+                output_dir=OUTPUT_DIR,
+                extractor_backend=extractor_backend or os.getenv("EXTRACTOR_BACKEND"),
+            )
         )
-    )
+    finally:
+        clear(job_id)
 
 
 async def _run_job(job_id: str, filepath: str, extractor_backend: str | None = None):
@@ -48,7 +53,7 @@ async def _run_job(job_id: str, filepath: str, extractor_backend: str | None = N
 
     loop = asyncio.get_running_loop()
     try:
-        job_store.update_progress(job_id, "starting", 0, 1, "Запуск пайплайна")
+        job_store.update_progress(job_id, "starting", 0, 1, "Подготовка к обработке документа")
         result = await loop.run_in_executor(
             _pipeline_executor,
             _run_pipeline_in_thread,
@@ -58,7 +63,11 @@ async def _run_job(job_id: str, filepath: str, extractor_backend: str | None = N
             on_progress,
         )
         job_store.complete_job(job_id, result)
+    except JobCancelled:
+        logger.info("Job %s cancelled by user", job_id)
+        job_store.fail_job(job_id, Msg.JOB_CANCELLED)
     except Exception as e:
+        logger.exception("Job %s failed: %s", job_id, e)
         job_store.fail_job(job_id, str(e))
 
 
@@ -99,7 +108,7 @@ async def _run_batch_job(
             job_store.update_progress(_cid, stage, current, progress_total, message)
 
         try:
-            job_store.update_progress(child_id, "starting", 0, 1, "Запуск пайплайна")
+            job_store.update_progress(child_id, "starting", 0, 1, "Подготовка")
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 _pipeline_executor,
@@ -113,11 +122,16 @@ async def _run_batch_job(
             done += 1
             child_results.append({"file": filepath.name, "status": "completed", "job_id": child_id})
             job_store.append_log(batch_id, f"✓ {filepath.name}", stage="batch", level="success")
+        except JobCancelled:
+            job_store.fail_job(child_id, Msg.JOB_CANCELLED)
+            failed += 1
+            child_results.append({"file": filepath.name, "status": "cancelled", "job_id": child_id})
         except Exception as e:
+            logger.exception("Batch child %s failed: %s", child_id, e)
             job_store.fail_job(child_id, str(e))
             failed += 1
             child_results.append({"file": filepath.name, "status": "failed", "error": str(e), "job_id": child_id})
-            job_store.append_log(batch_id, f"✗ {filepath.name}: {e}", stage="batch", level="error")
+            job_store.append_log(batch_id, f"✗ {filepath.name}", stage="batch", level="error")
 
         job_store.update_batch_stats(batch_id, done, failed, total)
         job_store.update_progress(
@@ -125,7 +139,7 @@ async def _run_batch_job(
             "batch",
             done + failed,
             total,
-            f"Обработано {done + failed}/{total} (ошибок: {failed})",
+            f"Обработано {done + failed} из {total}",
         )
 
     summary = {
@@ -136,13 +150,6 @@ async def _run_batch_job(
         "children": child_results,
     }
     if failed == total:
-        job_store.fail_job(batch_id, f"Все {total} файлов завершились с ошибкой")
-    elif failed > 0:
-        job_store.complete_job(batch_id, summary)
-        job_store.append_log(
-            batch_id,
-            f"Пакет завершён с ошибками: {failed}/{total}",
-            level="warning",
-        )
+        job_store.fail_job(batch_id, f"Не удалось обработать ни одного файла из {total}")
     else:
         job_store.complete_job(batch_id, summary)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 import uuid
@@ -24,9 +25,9 @@ ACTIVE_STATUSES = (JobStatus.PENDING.value, JobStatus.RUNNING.value)
 
 
 class JobStore:
-    def __init__(self, db_path: str = "data/jobs.db"):
-        self.db_path = db_path
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or os.getenv("JOBS_DB") or "data/jobs.db"
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._init_db()
 
@@ -262,6 +263,7 @@ class JobStore:
         active_only: bool = False,
         batch_id: Optional[str] = None,
         job_type: Optional[str] = None,
+        created_by: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM jobs WHERE 1=1"
         params: list = []
@@ -274,6 +276,9 @@ class JobStore:
         if job_type:
             sql += " AND job_type=?"
             params.append(job_type)
+        if created_by:
+            sql += " AND created_by=?"
+            params.append(created_by)
         sql += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
         with self._connect() as conn:

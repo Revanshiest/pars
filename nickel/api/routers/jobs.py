@@ -1,6 +1,4 @@
-"""API-роутер: задачи пайплайна (список, статус, логи, дочерние, отмена).
-
-Без тегов/префикса — пути сохранены как были в main."""
+"""API-роутер: задачи пайплайна."""
 
 from __future__ import annotations
 
@@ -11,6 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from api.auth import audit_action, check_permission, get_current_user
 from api.models import JobLogEntry, JobResponse
 from api.runtime import job_store
+from services.job_cancel import cancel as cancel_running
+from services.user_messages import Msg
 
 router = APIRouter()
 
@@ -23,7 +23,8 @@ async def list_jobs(
     user=Depends(get_current_user),
 ):
     check_permission(user, "read")
-    jobs = job_store.list_jobs(limit=limit, active_only=active, batch_id=batch_id)
+    created_by = None if user.get("role") == "admin" else user.get("email")
+    jobs = job_store.list_jobs(limit=limit, active_only=active, batch_id=batch_id, created_by=created_by)
     return [JobResponse(**j) for j in jobs]
 
 
@@ -32,7 +33,9 @@ async def get_job(job_id: str, user=Depends(get_current_user)):
     check_permission(user, "read")
     job = job_store.get_job(job_id)
     if not job:
-        raise HTTPException(404, "Job not found")
+        raise HTTPException(404, Msg.JOB_NOT_FOUND)
+    if user.get("role") != "admin" and job.get("created_by") not in (None, user.get("email")):
+        raise HTTPException(404, Msg.JOB_NOT_FOUND)
     return JobResponse(**job)
 
 
@@ -44,8 +47,11 @@ async def get_job_logs(
     user=Depends(get_current_user),
 ):
     check_permission(user, "read")
-    if not job_store.get_job(job_id):
-        raise HTTPException(404, "Job not found")
+    job = job_store.get_job(job_id)
+    if not job:
+        raise HTTPException(404, Msg.JOB_NOT_FOUND)
+    if user.get("role") != "admin" and job.get("created_by") not in (None, user.get("email")):
+        raise HTTPException(404, Msg.JOB_NOT_FOUND)
     return job_store.get_logs(job_id, since_id=since_id, limit=limit)
 
 
@@ -53,7 +59,7 @@ async def get_job_logs(
 async def get_job_children(job_id: str, user=Depends(get_current_user)):
     check_permission(user, "read")
     if not job_store.get_job(job_id):
-        raise HTTPException(404, "Job not found")
+        raise HTTPException(404, Msg.JOB_NOT_FOUND)
     return [JobResponse(**j) for j in job_store.list_jobs(limit=200, batch_id=job_id)]
 
 
@@ -62,9 +68,12 @@ async def cancel_job(job_id: str, user=Depends(get_current_user)):
     check_permission(user, "upload")
     job = job_store.get_job(job_id)
     if not job:
-        raise HTTPException(404, "Job not found")
+        raise HTTPException(404, Msg.JOB_NOT_FOUND)
+    if user.get("role") != "admin" and job.get("created_by") not in (None, user.get("email")):
+        raise HTTPException(404, Msg.JOB_NOT_FOUND)
     if job["status"] not in ("pending", "running"):
-        raise HTTPException(409, f"Job is already {job['status']}")
-    job_store.cancel_job(job_id, "Отменено пользователем")
+        raise HTTPException(409, Msg.JOB_ALREADY_DONE)
+    cancel_running(job_id)
+    job_store.cancel_job(job_id, Msg.JOB_CANCELLED)
     audit_action(user, "job.cancel", job_id, {"filename": job.get("filename")})
     return JobResponse(**job_store.get_job(job_id))

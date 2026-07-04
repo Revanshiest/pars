@@ -8,6 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.auth import audit_action, check_permission, get_current_user
+from services.logging_config import get_logger
+from services.user_messages import Msg
+
+logger = get_logger(__name__)
 from services.search_filters import compare_practices, filtered_search
 from services.search_runtime import run_search
 
@@ -82,7 +86,8 @@ async def search_hybrid(body: FilteredSearchRequest, user=Depends(get_current_us
     try:
         return await run_search(hybrid_ranked_search, **body.model_dump(), role=user["role"])
     except Exception as exc:
-        raise HTTPException(503, f"Search unavailable: {exc}") from exc
+        logger.warning("Hybrid search failed: %s", exc)
+        raise HTTPException(503, Msg.SEARCH_UNAVAILABLE) from exc
 
 
 @router.get("/search/examples")

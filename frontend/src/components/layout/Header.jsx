@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { api } from '../../api/client'
+import NotificationsBell from '../NotificationsBell'
 
 const TITLES = {
   '/search': 'Ассистент',
@@ -31,12 +32,10 @@ export default function Header() {
       <h1 className="text-base font-bold text-surface-100">
         {TITLES[pathname] || 'НОРНИК R&D Knowledge Map'}
       </h1>
-      <div className="flex items-center gap-2 text-xs text-surface-400">
+      <div className="flex items-center gap-3 text-xs text-surface-400">
+        <NotificationsBell />
         <span className={ok ? 'w-2 h-2 rounded-full bg-accent-400 animate-pulse' : 'w-2 h-2 rounded-full bg-red-400'} />
-        {ok ? 'Система активна' : 'Деградация / недоступна'}
-        {health?.status && (
-          <span className="badge bg-surface-900 text-surface-400 ml-1">{health.status}</span>
-        )}
+        {ok ? 'Система активна' : 'Сервис временно недоступен'}
       </div>
     </header>
   )

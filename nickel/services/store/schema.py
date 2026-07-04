@@ -139,6 +139,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         "api_keys": [
             ("expires_at", "TEXT"),
             ("last_used_at", "TEXT"),
+            ("key_prefix", "TEXT"),
         ],
     }
     for table, cols in columns.items():
@@ -156,3 +157,55 @@ def create_late_indexes(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_vf_priority ON verified_facts(review_priority)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_vf_subject ON verified_facts(subject)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_vf_object ON verified_facts(object)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_vf_geo ON verified_facts(geography)"
+    )
+    _ensure_facts_fts(conn)
+
+
+def _ensure_facts_fts(conn: sqlite3.Connection) -> None:
+    """FTS5 для полнотекстового поиска по subject/object/relation."""
+    try:
+        conn.execute(
+            """CREATE VIRTUAL TABLE IF NOT EXISTS verified_facts_fts USING fts5(
+                   subject, object, relation, source_document,
+                   content='verified_facts', content_rowid='rowid'
+               )"""
+        )
+        count = conn.execute("SELECT COUNT(*) FROM verified_facts_fts").fetchone()[0]
+        facts = conn.execute("SELECT COUNT(*) FROM verified_facts").fetchone()[0]
+        if facts and count == 0:
+            conn.execute(
+                """INSERT INTO verified_facts_fts(rowid, subject, object, relation, source_document)
+                   SELECT rowid, subject, object, relation, COALESCE(source_document, '')
+                   FROM verified_facts"""
+            )
+        conn.execute(
+            """CREATE TRIGGER IF NOT EXISTS verified_facts_ai AFTER INSERT ON verified_facts BEGIN
+               INSERT INTO verified_facts_fts(rowid, subject, object, relation, source_document)
+               VALUES (new.rowid, new.subject, new.object, new.relation, COALESCE(new.source_document, ''));
+               END"""
+        )
+        conn.execute(
+            """CREATE TRIGGER IF NOT EXISTS verified_facts_ad AFTER DELETE ON verified_facts BEGIN
+               INSERT INTO verified_facts_fts(verified_facts_fts, rowid, subject, object, relation, source_document)
+               VALUES('delete', old.rowid, old.subject, old.object, old.relation, COALESCE(old.source_document, ''));
+               END"""
+        )
+        conn.execute(
+            """CREATE TRIGGER IF NOT EXISTS verified_facts_au AFTER UPDATE ON verified_facts BEGIN
+               INSERT INTO verified_facts_fts(verified_facts_fts, rowid, subject, object, relation, source_document)
+               VALUES('delete', old.rowid, old.subject, old.object, old.relation, COALESCE(old.source_document, ''));
+               INSERT INTO verified_facts_fts(rowid, subject, object, relation, source_document)
+               VALUES (new.rowid, new.subject, new.object, new.relation, COALESCE(new.source_document, ''));
+               END"""
+        )
+    except sqlite3.OperationalError as exc:
+        import logging
+        logging.getLogger(__name__).warning("FTS5 setup skipped: %s", exc)

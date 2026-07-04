@@ -12,6 +12,7 @@ from services.platform_config import compare_defaults, domain_processes
 from services.search_filters import filtered_search
 from services.store import get_store
 from services.synthesis_llm import synthesize_literature_review
+from services.user_messages import Msg
 from services.verification import aggregate_by_source_type, enrich_fact, internal_vs_publication_summary
 
 
@@ -93,6 +94,19 @@ def generate_literature_review(
     chunks = all_data.get("chunks", [])
     entities = all_data.get("entities", [])
 
+    if not facts and not chunks:
+        return {
+            "topic": topic,
+            "confidence": 0,
+            "sources_count": 0,
+            "verified_sources": 0,
+            "summary": Msg.LIT_REVIEW_NO_DATA,
+            "llm_synthesized": False,
+            "synthesis_mode": "empty",
+            "consensus_findings": [],
+            "disagreements": [],
+        }
+
     by_method: Dict[str, List] = defaultdict(list)
     by_geo: Dict[str, List] = defaultdict(list)
     consensus = []
@@ -106,15 +120,23 @@ def generate_literature_review(
         elif f.get("verification_status") == "verified":
             consensus.append(f)
 
+    key_findings = [f for f in facts if f.get("relation") != "contradicts"]
+    if not consensus:
+        consensus = key_findings
+
     verified_count = sum(1 for f in facts if f.get("verification_status") == "verified")
-    confidence = min(0.95, 0.25 + 0.05 * len(chunks) + 0.08 * verified_count)
+    sources_count = len(chunks) + len(facts)
+    confidence = (
+        0.0 if sources_count == 0
+        else round(min(0.95, 0.35 + 0.05 * len(chunks) + 0.08 * verified_count), 2)
+    )
     enriched_facts = [enrich_fact(f) for f in facts]
     year_data = group_facts_by_year(enriched_facts, chunks)
 
     sections = {
         "topic": topic,
-        "confidence": round(confidence, 2),
-        "sources_count": len(chunks) + len(facts),
+        "confidence": confidence,
+        "sources_count": sources_count,
         "verified_sources": verified_count,
         "by_method": {k: len(v) for k, v in by_method.items()},
         "by_geography": {k: len(v) for k, v in by_geo.items()},
@@ -124,6 +146,7 @@ def generate_literature_review(
         "by_source_type": aggregate_by_source_type(enriched_facts),
         "internal_vs_publication": internal_vs_publication_summary(enriched_facts),
         "consensus_findings": [enrich_fact(f) for f in consensus[:10]],
+        "key_findings": [enrich_fact(f) for f in key_findings[:12]],
         "disagreements": [enrich_fact(f) for f in disagreements[:10]],
         "document_excerpts": chunks[:8],
         "entities": entities[:10],

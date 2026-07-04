@@ -66,7 +66,7 @@ export default function AnalyticsPage() {
     setLoading(true)
     setError('')
     try {
-      setReview(await api.literatureReview(auth, topic, { use_llm: false }))
+      setReview(await api.literatureReview(auth, topic, { use_llm: true }))
     } catch (e) {
       setError(e.message)
     } finally {
@@ -92,7 +92,7 @@ export default function AnalyticsPage() {
     setExportMsg('')
     try {
       const res = await api.exportReport(auth, topic, format)
-      setExportMsg(`Экспорт ${format}: ${res.path || 'готово'}`)
+      setExportMsg(format === 'pdf' ? 'PDF-отчёт готов к скачиванию' : format === 'jsonld' ? 'Файл JSON-LD сформирован' : 'Markdown-отчёт готов')
     } catch (e) {
       setError(e.message)
     }
@@ -130,8 +130,8 @@ export default function AnalyticsPage() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               ['Фактов', dashboard.facts_total],
-              ['Verified', dashboard.verified],
-              ['Pending', dashboard.pending_verification],
+              ['Проверено', dashboard.verified],
+              ['На проверке', dashboard.pending_verification],
               ['Противоречий', dashboard.contradictions],
               ['Глоссарий', dashboard.glossary_terms],
             ].map(([l, v]) => (
@@ -216,8 +216,8 @@ export default function AnalyticsPage() {
                 <div key={g.scenario_id || g.label || idx} className="border-b border-surface-800 pb-3 last:border-0">
                   <h3 className="text-sm font-bold text-surface-100">{g.label}</h3>
                   <p className={clsx('text-sm mt-1', g.is_gap ? 'text-amber-600' : 'text-emerald-600')}>
-                    {g.is_gap ? `Пробел (${g.gap_severity})` : 'Данные найдены'}
-                    {g.full_overlap_facts != null && ` · полных совпадений: ${g.full_overlap_facts}`}
+                    {g.is_gap ? 'Обнаружен пробел в знаниях' : 'Данные по этому сценарию есть'}
+                    {g.full_overlap_facts != null && g.full_overlap_facts > 0 && ` · найдено совпадений: ${g.full_overlap_facts}`}
                   </p>
                   {g.recommendation && (
                     <p className="text-xs text-surface-400 mt-2">{g.recommendation}</p>
@@ -249,10 +249,18 @@ export default function AnalyticsPage() {
 
       {review && (
         <div className="card p-5 space-y-4">
-          <div className="flex gap-4 text-sm">
-            <span>Уверенность: <strong>{review.confidence}</strong></span>
-            <span>Источников: {review.sources_count}</span>
-            <span>Verified: {review.verified_sources}</span>
+          <div className="flex gap-4 text-sm flex-wrap">
+            {review.sources_count > 0 ? (
+              <>
+                <span>Материалов в базе: <strong>{review.sources_count}</strong></span>
+                <span>Проверено экспертами: {review.verified_sources}</span>
+                {review.llm_synthesized && (
+                  <span className="text-surface-400">Сформировано с помощью языковой модели</span>
+                )}
+              </>
+            ) : (
+              <span className="text-surface-400">По теме пока нет материалов в базе — уверенность не рассчитывается</span>
+            )}
           </div>
           {review.summary && <p className="text-sm text-surface-200 whitespace-pre-wrap">{review.summary}</p>}
           {review.consensus_findings?.length > 0 && (
@@ -267,7 +275,7 @@ export default function AnalyticsPage() {
             <div>
               <h4 className="text-xs font-bold text-amber-600 mb-2">Разногласия</h4>
               {review.disagreements.slice(0, 5).map((f, i) => (
-                <p key={i} className="text-sm">{f.subject} contradicts {f.object}</p>
+                <p key={i} className="text-sm">{f.subject} — расходится с — {f.object}</p>
               ))}
             </div>
           )}
@@ -289,7 +297,7 @@ export default function AnalyticsPage() {
               <tr className="text-left text-xs text-surface-400 border-b">
                 <th className="pb-2">Технология</th>
                 <th className="pb-2">Фактов</th>
-                <th className="pb-2">Verified</th>
+                <th className="pb-2">Проверено</th>
                 <th className="pb-2">Параметры</th>
                 <th className="pb-2">Географии</th>
               </tr>
@@ -300,10 +308,17 @@ export default function AnalyticsPage() {
                   <td className="py-2 font-medium">{name}</td>
                   <td className="py-2">{t.facts_count ?? '—'}</td>
                   <td className="py-2">{t.verified_count ?? '—'}</td>
-                  <td className="py-2 text-xs">
-                    {t.parameters && Object.keys(t.parameters).length > 0
-                      ? Object.keys(t.parameters).slice(0, 4).join(', ')
-                      : '—'}
+                  <td className="py-2 text-xs align-top">
+                    {t.parameters && Object.keys(t.parameters).length > 0 ? (
+                      <ul className="space-y-1">
+                        {Object.entries(t.parameters).slice(0, 6).map(([param, vals]) => (
+                          <li key={param}>
+                            <span className="font-medium text-surface-200">{param}:</span>{' '}
+                            {(Array.isArray(vals) ? vals : [vals]).slice(0, 3).join('; ')}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : '—'}
                   </td>
                   <td className="py-2 text-xs">{(t.geographies || []).join(', ') || '—'}</td>
                 </tr>

@@ -9,7 +9,11 @@ from pydantic import BaseModel, Field
 
 from api.auth import audit_action, check_permission, get_current_user
 from services.auth_bootstrap import assignable_roles, env_admin_spec, is_env_admin_email
+from services.logging_config import get_logger
 from services.store import ROLE_PERMISSIONS, get_store
+from services.user_messages import Msg
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["platform"])
 
@@ -49,9 +53,10 @@ async def update_document_access(
     try:
         ok = store.set_document_access(source_document, body.access_level)
     except ValueError as e:
+        logger.warning("Document access update rejected: %s", e)
         raise HTTPException(400, str(e))
     if not ok:
-        raise HTTPException(404, "Document not found")
+        raise HTTPException(404, Msg.DOCUMENT_NOT_FOUND)
     audit_action(user, "admin.document_access", source_document, {"access_level": body.access_level})
     return {"source_document": source_document, "access_level": body.access_level}
 
@@ -95,9 +100,9 @@ async def admin_create_user(body: UserCreate, user=Depends(get_current_user)):
     from api.auth import require_admin
     require_admin(user)
     if body.role == "admin":
-        raise HTTPException(403, "Admin role is only via AUTH_ADMIN in .env")
+        raise HTTPException(403, Msg.ADMIN_ENV_ONLY)
     if body.role not in assignable_roles():
-        raise HTTPException(400, f"Invalid role: {body.role}")
+        raise HTTPException(400, Msg.INVALID_ROLE)
     store = get_store()
     try:
         created = store.create_user(body.email, body.name, body.role, api_key=body.api_key)
@@ -117,14 +122,14 @@ async def admin_update_user(user_id: str, body: UserUpdate, user=Depends(get_cur
     store = get_store()
     target = store.get_user(user_id)
     if not target:
-        raise HTTPException(404, "User not found")
+        raise HTTPException(404, Msg.USER_NOT_FOUND)
     if is_env_admin_email(target["email"]):
         if body.role and body.role != "admin":
-            raise HTTPException(403, "Cannot change env admin role")
+            raise HTTPException(403, Msg.ADMIN_ENV_ONLY)
         if body.email and body.email.strip().lower() != target["email"]:
-            raise HTTPException(403, "Cannot change env admin email")
+            raise HTTPException(403, Msg.ADMIN_ENV_ONLY)
     if body.role == "admin" and env_admin_spec():
-        raise HTTPException(403, "Admin role is only via AUTH_ADMIN in .env")
+        raise HTTPException(403, Msg.ADMIN_ENV_ONLY)
     try:
         updated = store.update_user(
             user_id,
@@ -135,7 +140,7 @@ async def admin_update_user(user_id: str, body: UserUpdate, user=Depends(get_cur
     except ValueError as e:
         raise HTTPException(400, str(e))
     if not updated:
-        raise HTTPException(404, "User not found")
+        raise HTTPException(404, Msg.USER_NOT_FOUND)
     audit_action(user, "admin.update_user", user_id, body.model_dump(exclude_none=True))
     return updated
 
@@ -145,17 +150,17 @@ async def admin_delete_user(user_id: str, user=Depends(get_current_user)):
     from api.auth import require_admin
     require_admin(user)
     if user_id == user["id"]:
-        raise HTTPException(400, "Cannot delete your own account")
+        raise HTTPException(400, Msg.USER_SELF_DELETE)
     store = get_store()
     target = store.get_user(user_id)
     if target and is_env_admin_email(target["email"]):
-        raise HTTPException(403, "Cannot delete env admin")
+        raise HTTPException(403, Msg.ADMIN_ENV_ONLY)
     try:
         ok = store.delete_user(user_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
     if not ok:
-        raise HTTPException(404, "User not found")
+        raise HTTPException(404, Msg.USER_NOT_FOUND)
     audit_action(user, "admin.delete_user", user_id)
     return {"deleted": user_id}
 
@@ -167,9 +172,9 @@ async def admin_rotate_key(user_id: str, user=Depends(get_current_user)):
     store = get_store()
     target = store.get_user(user_id)
     if target and is_env_admin_email(target["email"]):
-        raise HTTPException(403, "Env admin API key is synced from AUTH_ADMIN on restart")
+        raise HTTPException(403, Msg.ADMIN_ENV_KEY)
     new_key = store.rotate_api_key(user_id)
     if not new_key:
-        raise HTTPException(404, "User not found")
+        raise HTTPException(404, Msg.USER_NOT_FOUND)
     audit_action(user, "admin.rotate_key", user_id)
     return {"user_id": user_id, "api_key": new_key}

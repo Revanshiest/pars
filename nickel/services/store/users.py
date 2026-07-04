@@ -8,6 +8,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from services.api_key_crypto import key_hint, keys_match, storage_value
+
 
 ROLES = ["researcher", "analyst", "project_manager", "admin", "external_partner"]
 
@@ -57,6 +59,8 @@ class UsersMixin:
         if len(key) < 16:
             raise ValueError("API key must be at least 16 characters")
 
+        stored = storage_value(key)
+        prefix = key_hint(key)
         uid = str(uuid.uuid4())
         now = self._now()
         with self._lock, self._connect() as conn:
@@ -67,8 +71,8 @@ class UsersMixin:
                 (uid, email, name.strip(), role, now),
             )
             conn.execute(
-                "INSERT INTO api_keys (key, user_id, created_at, expires_at) VALUES (?,?,?,?)",
-                (key, uid, now, self._api_key_expires_at()),
+                "INSERT INTO api_keys (key, user_id, created_at, expires_at, key_prefix) VALUES (?,?,?,?,?)",
+                (stored, uid, now, self._api_key_expires_at(), prefix),
             )
         return {
             "id": uid,
@@ -141,13 +145,15 @@ class UsersMixin:
     def rotate_api_key(self, user_id: str) -> Optional[str]:
         key = self._generate_api_key()
         now = self._now()
+        stored = storage_value(key)
+        prefix = key_hint(key)
         with self._lock, self._connect() as conn:
             if not conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone():
                 return None
             conn.execute("DELETE FROM api_keys WHERE user_id=?", (user_id,))
             conn.execute(
-                "INSERT INTO api_keys (key, user_id, created_at, expires_at) VALUES (?,?,?,?)",
-                (key, user_id, now, self._api_key_expires_at()),
+                "INSERT INTO api_keys (key, user_id, created_at, expires_at, key_prefix) VALUES (?,?,?,?,?)",
+                (stored, user_id, now, self._api_key_expires_at(), prefix),
             )
         return key
 
@@ -156,13 +162,15 @@ class UsersMixin:
         if len(key) < 16:
             raise ValueError("API key must be at least 16 characters")
         now = self._now()
+        stored = storage_value(key)
+        prefix = key_hint(key)
         with self._lock, self._connect() as conn:
             if not conn.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone():
                 raise ValueError("User not found")
             conn.execute("DELETE FROM api_keys WHERE user_id=?", (user_id,))
             conn.execute(
-                "INSERT INTO api_keys (key, user_id, created_at, expires_at) VALUES (?,?,?,?)",
-                (key, user_id, now, self._api_key_expires_at()),
+                "INSERT INTO api_keys (key, user_id, created_at, expires_at, key_prefix) VALUES (?,?,?,?,?)",
+                (stored, user_id, now, self._api_key_expires_at(), prefix),
             )
 
     def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -188,8 +196,9 @@ class UsersMixin:
             result = []
             for row in rows:
                 d = dict(row)
-                key = d.pop("key", None)
-                d["key_hint"] = f"...{key[-4:]}" if key and len(key) >= 4 else None
+                prefix = d.pop("key_prefix", None)
+                d.pop("key", None)
+                d["key_hint"] = prefix or None
                 result.append(d)
             return result
 
@@ -226,19 +235,29 @@ class UsersMixin:
 
     def get_user_by_key(self, api_key: str) -> Optional[Dict[str, Any]]:
         now = self._now()
+        provided = api_key.strip()
+        lookup = storage_value(provided)
         with self._lock, self._connect() as conn:
             row = conn.execute(
-                """SELECT u.id, u.email, u.name, u.role, k.expires_at
-                   FROM users u JOIN api_keys k ON k.user_id = u.id WHERE k.key=?""",
-                (api_key,),
+                """SELECT u.id, u.email, u.name, u.role, k.key, k.expires_at
+                   FROM users u JOIN api_keys k ON k.user_id = u.id
+                   WHERE k.key IN (?, ?)""",
+                (lookup, provided),
             ).fetchone()
             if not row:
                 return None
             if row["expires_at"] and row["expires_at"] < now:
                 return None
+            if not keys_match(row["key"], provided):
+                return None
+            if row["key"] == provided:
+                conn.execute(
+                    "UPDATE api_keys SET key=?, key_prefix=? WHERE key=?",
+                    (lookup, key_hint(provided), provided),
+                )
             conn.execute(
-                "UPDATE api_keys SET last_used_at=? WHERE key=?",
-                (now, api_key),
+                "UPDATE api_keys SET last_used_at=? WHERE user_id=?",
+                (now, row["id"]),
             )
             return {"id": row["id"], "email": row["email"], "name": row["name"], "role": row["role"]}
 
