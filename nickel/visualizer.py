@@ -47,6 +47,10 @@ def generate_html(filepath: str, output_dir: str):
 
 def render_triples_html(triples: list, title: str = "Knowledge Graph") -> str:
     """Интерактивный HTML (PyVis) из списка triples."""
+    from services.glossary import normalize_entity
+    from services.store import get_store
+
+    glossary_index = get_store().build_glossary_index()
     G = nx.DiGraph()
 
     for t in triples:
@@ -59,6 +63,9 @@ def render_triples_html(triples: list, title: str = "Knowledge Graph") -> str:
 
         if not subj or not obj:
             continue
+
+        subj = normalize_entity(str(subj).strip(), index=glossary_index)
+        obj = normalize_entity(str(obj).strip(), index=glossary_index)
 
         if subj not in G:
             G.add_node(subj, group=subj_type, color=COLOR_MAP.get(subj_type, COLOR_MAP["Unknown"]), title=f"Type: {subj_type}")

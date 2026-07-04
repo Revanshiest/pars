@@ -14,12 +14,12 @@ const GAP_PRESETS = [
 ]
 
 const CAN_SYNTHESIS = new Set(['analyst', 'project_manager', 'admin'])
-const CAN_DASHBOARD = new Set(['project_manager', 'admin'])
+const CAN_DASHBOARD = new Set(['researcher', 'analyst', 'project_manager', 'admin'])
 const CAN_EXPORT = new Set(['analyst', 'project_manager', 'admin'])
 
 export default function AnalyticsPage() {
   const { auth, user } = useAuth()
-  const [tab, setTab] = useState('gaps')
+  const [tab, setTab] = useState('dashboard')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [topic, setTopic] = useState('электроэкстракция никеля')
@@ -32,7 +32,11 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     if (tab === 'dashboard' && CAN_DASHBOARD.has(user?.role)) {
-      api.dashboard(auth).then(setDashboard).catch(e => setError(e.message))
+      setLoading(true)
+      api.dashboard(auth)
+        .then(setDashboard)
+        .catch(e => setError(e.message))
+        .finally(() => setLoading(false))
     }
   }, [tab, auth, user?.role])
 
@@ -109,7 +113,14 @@ export default function AnalyticsPage() {
 
       {error && <div className="card p-4 text-red-500 text-sm">{error}</div>}
 
-      {tab === 'dashboard' && dashboard && (
+      {tab === 'dashboard' && (
+        <>
+          {loading && !dashboard && (
+            <div className="flex items-center gap-2 text-surface-400 text-sm">
+              <Loader2 size={16} className="animate-spin-slow" /> Загрузка дашборда…
+            </div>
+          )}
+          {dashboard && (
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             ['Фактов', dashboard.facts_total],
@@ -136,6 +147,8 @@ export default function AnalyticsPage() {
             </div>
           )}
         </div>
+          )}
+        </>
       )}
 
       {tab === 'gaps' && (

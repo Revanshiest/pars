@@ -17,8 +17,8 @@ from typing import Any, Dict, List, Optional
 ROLES = ["researcher", "analyst", "project_manager", "admin", "external_partner"]
 
 ROLE_PERMISSIONS: Dict[str, List[str]] = {
-    "researcher": ["read", "search", "upload", "subscribe", "glossary_read"],
-    "analyst": ["read", "search", "upload", "verify", "edit_graph", "export", "subscribe", "glossary_read", "glossary_write", "synthesis"],
+    "researcher": ["read", "search", "upload", "subscribe", "glossary_read", "dashboard"],
+    "analyst": ["read", "search", "upload", "verify", "edit_graph", "export", "subscribe", "glossary_read", "glossary_write", "synthesis", "dashboard"],
     "project_manager": ["read", "search", "upload", "verify", "edit_graph", "export", "dashboard", "compare", "subscribe", "glossary_read", "synthesis", "audit"],
     "admin": ["*"],
     "external_partner": ["read", "search", "glossary_read"],

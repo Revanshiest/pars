@@ -136,7 +136,7 @@ export default function GraphPage() {
   const [error, setError] = useState('')
   const [selected, setSelected] = useState(null)
   const [hovered, setHovered] = useState(null)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(centerEntity)
   const [viewMode, setViewMode] = useState('canvas')
   const [htmlBlobUrl, setHtmlBlobUrl] = useState(null)
   const [htmlLoading, setHtmlLoading] = useState(false)
@@ -153,33 +153,42 @@ export default function GraphPage() {
 
   useEffect(() => { xformRef.current = xform }, [xform])
 
+  useEffect(() => {
+    setSearch(centerEntity)
+  }, [centerEntity])
+
   const apiNodes = graphData.nodes || []
   const apiEdges = graphData.edges || []
+  const entityMode = Boolean(centerEntity.trim())
 
-  const filteredNodes = useMemo(() =>
-    apiNodes.filter(n =>
-      !search || (n.name || '').toLowerCase().includes(search.toLowerCase()))
-  , [apiNodes, search])
+  const displayNodes = useMemo(() => {
+    if (entityMode) return apiNodes
+    if (!search.trim()) return apiNodes
+    const q = search.toLowerCase()
+    return apiNodes.filter(n => (n.name || '').toLowerCase().includes(q))
+  }, [apiNodes, search, entityMode])
 
-  const filteredIds = useMemo(() => new Set(filteredNodes.map(n => n.id)), [filteredNodes])
+  const displayIds = useMemo(() => new Set(displayNodes.map(n => n.id)), [displayNodes])
 
-  const filteredEdges = useMemo(() =>
-    apiEdges.filter(e => filteredIds.has(e.source) && filteredIds.has(e.target))
-  , [apiEdges, filteredIds])
+  const displayEdges = useMemo(() => {
+    if (entityMode) return apiEdges
+    if (!search.trim()) return apiEdges
+    return apiEdges.filter(e => displayIds.has(e.source) && displayIds.has(e.target))
+  }, [apiEdges, displayIds, search, entityMode])
 
   const connectedIds = useMemo(() => {
     if (!selected) return null
     const s = new Set()
-    filteredEdges.forEach(e => {
+    displayEdges.forEach(e => {
       if (e.source === selected) s.add(e.target)
       if (e.target === selected) s.add(e.source)
     })
     return s
-  }, [selected, filteredEdges])
+  }, [selected, displayEdges])
 
   const connectedEdges = useMemo(() =>
-    selected ? filteredEdges.filter(e => e.source === selected || e.target === selected) : []
-  , [selected, filteredEdges])
+    selected ? displayEdges.filter(e => e.source === selected || e.target === selected) : []
+  , [selected, displayEdges])
 
   const startSim = useCallback((edges) => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
@@ -243,11 +252,11 @@ export default function GraphPage() {
 
   useEffect(() => {
     if (viewMode !== 'canvas' || !apiNodes.length) return
-    nodesRef.current = initSimNodes(filteredNodes.length ? filteredNodes : apiNodes, filteredEdges.length ? filteredEdges : apiEdges)
+    nodesRef.current = initSimNodes(displayNodes.length ? displayNodes : apiNodes, displayEdges.length ? displayEdges : apiEdges)
     alphaRef.current = 1
-    startSim(filteredEdges.length ? filteredEdges : apiEdges)
+    startSim(displayEdges.length ? displayEdges : apiEdges)
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
-  }, [viewMode, apiNodes, apiEdges, filteredNodes, filteredEdges, startSim])
+  }, [viewMode, apiNodes, apiEdges, displayNodes, displayEdges, startSim])
 
   const fitToView = useCallback(() => {
     const rect = svgRef.current?.getBoundingClientRect()
@@ -268,7 +277,7 @@ export default function GraphPage() {
     return () => window.removeEventListener('resize', fitToView)
   }, [loading, fitToView])
 
-  const reheat = () => { alphaRef.current = 0.8; startSim(filteredEdges); setTimeout(() => normalizeLayout(nodesRef.current), 1200) }
+  const reheat = () => { alphaRef.current = 0.8; startSim(displayEdges); setTimeout(() => normalizeLayout(nodesRef.current), 1200) }
 
   const toSim = useCallback((cx, cy) => {
     const rect = svgRef.current?.getBoundingClientRect()
@@ -285,8 +294,8 @@ export default function GraphPage() {
     node.fx = node.x; node.fy = node.y
     dragRef.current = { id, ox: pt.x - node.x, oy: pt.y - node.y, moved: false }
     alphaRef.current = Math.max(alphaRef.current, 0.15)
-    startSim(filteredEdges)
-  }, [toSim, filteredEdges, startSim])
+    startSim(displayEdges)
+  }, [toSim, displayEdges, startSim])
 
   const onBgDown = useCallback((e) => {
     if (e.button !== 0) return
@@ -364,6 +373,11 @@ export default function GraphPage() {
     setSearchParams(p)
   }
 
+  const submitSearch = () => {
+    const q = search.trim()
+    applyCenter(q)
+  }
+
   const applySource = (doc) => {
     const p = {}
     if (centerEntity) p.entity = centerEntity
@@ -391,10 +405,16 @@ export default function GraphPage() {
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Найти узел…"
+              onKeyDown={e => { if (e.key === 'Enter') submitSearch() }}
+              placeholder="Найти узел… (Enter)"
               className="input pl-8 py-2 text-xs"
             />
           </div>
+          {!entityMode && search.trim() && (
+            <button type="button" className="btn-primary w-full text-xs mt-2" onClick={submitSearch}>
+              Показать узел и связи
+            </button>
+          )}
           {centerEntity && (
             <div className="mt-2 flex items-center gap-1 text-[10px] text-brand-600 bg-brand-50 rounded-lg px-2 py-1">
               <Network size={10} />
@@ -439,16 +459,18 @@ export default function GraphPage() {
         <div className="card p-3">
           <div className="grid grid-cols-2 gap-2 mb-2">
             <div className="text-center bg-brand-50 rounded-xl py-2">
-              <div className="text-xl font-black text-brand-600">{filteredNodes.length}</div>
+              <div className="text-xl font-black text-brand-600">{displayNodes.length}</div>
               <div className="text-[10px] text-brand-400">узлов</div>
             </div>
             <div className="text-center bg-surface-900 rounded-xl py-2">
-              <div className="text-xl font-black text-surface-200">{filteredEdges.length}</div>
+              <div className="text-xl font-black text-surface-200">{displayEdges.length}</div>
               <div className="text-[10px] text-surface-400">связей</div>
             </div>
           </div>
           <p className="text-xs text-surface-400 mt-2">
-            Показано до 150 узлов. Уточните источник или центр подграфа для детализации.
+            {entityMode
+              ? 'Центральный узел и до 10 связей. Enter в поиске — новый центр.'
+              : 'Обзор до 150 узлов. Введите термин и нажмите Enter — узел + до 10 связей.'}
           </p>
           <button type="button" onClick={reheat} className="btn-secondary w-full text-xs mt-2">
             <RotateCcw size={11} /> Пересчитать
@@ -482,8 +504,10 @@ export default function GraphPage() {
         ) : (
           <>
         {!apiNodes.length && !error && (
-          <div className="absolute inset-0 flex items-center justify-center text-surface-400 text-sm">
-            Граф пуст. Загрузите документы или выберите источник «schlesinger».
+          <div className="absolute inset-0 flex items-center justify-center text-surface-400 text-sm text-center px-6">
+            {entityMode
+              ? `Узел «${centerEntity}» не найден. Попробуйте другое написание или снимите фильтр источника.`
+              : 'Граф пуст. Загрузите документы или выберите источник «schlesinger».'}
           </div>
         )}
 
@@ -505,7 +529,7 @@ export default function GraphPage() {
           onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}>
           <rect width="100%" height="100%" fill="#f7f4fd" onMouseDown={onBgDown} />
           <g transform={`translate(${xform.x},${xform.y}) scale(${xform.s})`}>
-            {filteredEdges.map((edge, i) => {
+            {displayEdges.map((edge, i) => {
               const s = getPos(edge.source)
               const t = getPos(edge.target)
               if (!s || !t) return null
@@ -530,11 +554,12 @@ export default function GraphPage() {
               )
             })}
 
-            {filteredNodes.map(node => {
+            {displayNodes.map(node => {
               const p = getPos(node.id)
               if (!p) return null
               const cfg = TYPE_CFG[node.type] || DEFAULT_CFG
               const isSel = selected === node.id
+              const isCenter = entityMode && (node.name || '').toLowerCase().includes(centerEntity.toLowerCase())
               const isConn = connectedIds?.has(node.id)
               const dim = selected && !isSel && !isConn
               const r = getR(node.id)
@@ -547,6 +572,7 @@ export default function GraphPage() {
                   onMouseEnter={() => setHovered(node.id)}
                   onMouseLeave={() => setHovered(null)}>
                   {isSel && <circle r={r + 4} fill="none" stroke="#5302e0" strokeWidth="1.5" />}
+                  {isCenter && !isSel && <circle r={r + 6} fill="none" stroke="#f59e0b" strokeWidth="2" strokeDasharray="4 2" />}
                   <circle r={r} fill={cfg.glow}
                     stroke={hovered === node.id || isSel ? 'white' : 'none'}
                     strokeWidth={hovered === node.id || isSel ? 1.5 : 0} />
@@ -570,6 +596,11 @@ export default function GraphPage() {
               <div>
                 <span className="badge bg-brand-50 text-brand-600 border border-brand-100">{selNode.type}</span>
                 <h3 className="text-sm font-bold text-surface-100 mt-2 leading-snug">{selNode.name}</h3>
+                {selNode.aliases?.length > 0 && (
+                  <p className="text-[10px] text-surface-400 mt-1">
+                    Также: {selNode.aliases.join(', ')}
+                  </p>
+                )}
               </div>
               <button type="button" className="btn-ghost p-1" onClick={() => setSelected(null)}>
                 <X size={14} />

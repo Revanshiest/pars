@@ -6,6 +6,13 @@ import { api } from '../api/client'
 
 const CAN_WRITE = new Set(['analyst', 'admin'])
 
+const AUTO_DEF_RE = /^(Автоматически|Импортировано)/i
+
+function displayDefinition(definition) {
+  if (!definition || AUTO_DEF_RE.test(definition.trim())) return null
+  return definition
+}
+
 function SynonymList({ items, lang }) {
   if (!items?.length) return <span className="text-surface-400">—</span>
   return (
@@ -250,16 +257,17 @@ export default function GlossaryPage() {
                   <th className="pb-2 pr-3 font-medium">Домен</th>
                   <th className="pb-2 pr-3 font-medium">RU</th>
                   <th className="pb-2 pr-3 font-medium">EN</th>
-                  <th className="pb-2 font-medium">Источник</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-800">
-                {terms.map(t => (
+                {terms.map(t => {
+                  const def = displayDefinition(t.definition)
+                  return (
                   <tr key={t.id} className="align-top">
                     <td className="py-3 pr-3">
                       <div className="font-semibold text-surface-100">{t.canonical}</div>
-                      {t.definition && (
-                        <p className="text-xs text-surface-400 mt-1 max-w-xs">{t.definition}</p>
+                      {def && (
+                        <p className="text-xs text-surface-400 mt-1 max-w-xs">{def}</p>
                       )}
                     </td>
                     <td className="py-3 pr-3">
@@ -273,9 +281,9 @@ export default function GlossaryPage() {
                     <td className="py-3 pr-3 max-w-[180px]">
                       <SynonymList items={t.synonyms_en} />
                     </td>
-                    <td className="py-3 text-xs text-surface-400">{t.source || '—'}</td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

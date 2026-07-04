@@ -213,7 +213,6 @@ export default function IngestPage() {
   const [folders, setFolders] = useState([])
   const [folderPath, setFolderPath] = useState('data/inbox')
   const [extractor, setExtractor] = useState('auto')
-  const [recursive, setRecursive] = useState(false)
   const [expanded, setExpanded] = useState({})
   const [uploading, setUploading] = useState(false)
   const [uploadMsg, setUploadMsg] = useState('')
@@ -252,7 +251,7 @@ export default function IngestPage() {
     setError('')
     setUploadMsg('')
     try {
-      const job = await api.ingestFolder(auth, folderPath, extractor, recursive)
+      const job = await api.ingestFolder(auth, folderPath, extractor, true)
       setExpanded(prev => ({ ...prev, [job.id]: true }))
       await loadJobs()
     } catch (e) {
@@ -311,48 +310,6 @@ export default function IngestPage() {
 
       {canUpload && (
         <>
-          {/* Folder ingest */}
-          <div className="card p-5 space-y-4">
-            <h3 className="section-title text-sm flex items-center gap-2">
-              <FolderOpen size={16} className="text-brand-600" />
-              Обработка папки на сервере
-            </h3>
-            <p className="text-xs text-surface-400">
-              Укажите путь внутри <code className="font-mono bg-surface-900 px-1 rounded">data/inbox</code> или{' '}
-              <code className="font-mono bg-surface-900 px-1 rounded">data/uploads</code>.
-              Все пользователи видят прогресс и логи активных задач.
-            </p>
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="label mb-1.5 block">Путь к папке</label>
-                <input className="input font-mono text-sm" value={folderPath} onChange={e => setFolderPath(e.target.value)} list="folder-list" />
-                <datalist id="folder-list">
-                  {folders.map(f => (
-                    <option key={f.path} value={f.path}>{f.name}</option>
-                  ))}
-                </datalist>
-              </div>
-              <div>
-                <label className="label mb-1.5 block">Экстрактор</label>
-                <select className="input text-sm" value={extractor} onChange={e => setExtractor(e.target.value)}>
-                  <option value="auto">auto</option>
-                  <option value="ollama">ollama</option>
-                  <option value="yandex">yandex</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex items-center gap-4 flex-wrap">
-              <label className="flex items-center gap-2 text-sm text-surface-300 cursor-pointer">
-                <input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)} className="rounded" />
-                Рекурсивно (подпапки)
-              </label>
-              <button type="button" className="btn-primary" onClick={startFolder} disabled={uploading || !folderPath}>
-                {uploading ? <Loader2 size={14} className="animate-spin-slow" /> : <Play size={14} />}
-                Запустить обработку папки
-              </button>
-            </div>
-          </div>
-
           {/* File upload */}
           <div
             className={clsx(
@@ -376,6 +333,44 @@ export default function IngestPage() {
               JSON-граф: объект с массивом <code className="font-mono bg-surface-900 px-1 rounded">triples</code>.
               Импорт быстрый, без LLM.
             </p>
+          </div>
+
+          {/* Folder ingest */}
+          <div className="card p-5 space-y-4">
+            <h3 className="section-title text-sm flex items-center gap-2">
+              <FolderOpen size={16} className="text-brand-600" />
+              Обработка папки на сервере
+            </h3>
+            <p className="text-xs text-surface-400">
+              Укажите путь внутри <code className="font-mono bg-surface-900 px-1 rounded">data/inbox</code> или{' '}
+              <code className="font-mono bg-surface-900 px-1 rounded">data/uploads</code>.
+              Подпапки обрабатываются автоматически (рекурсивно).
+            </p>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className="label mb-1.5 block">Путь к папке</label>
+                <input className="input font-mono text-sm" value={folderPath} onChange={e => setFolderPath(e.target.value)} list="folder-list" />
+                <datalist id="folder-list">
+                  {folders.map(f => (
+                    <option key={f.path} value={f.path}>{f.name}</option>
+                  ))}
+                </datalist>
+              </div>
+              <div>
+                <label className="label mb-1.5 block">Экстрактор</label>
+                <select className="input text-sm" value={extractor} onChange={e => setExtractor(e.target.value)}>
+                  <option value="auto">auto</option>
+                  <option value="ollama">ollama</option>
+                  <option value="yandex">yandex</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 flex-wrap">
+              <button type="button" className="btn-primary" onClick={startFolder} disabled={uploading || !folderPath}>
+                {uploading ? <Loader2 size={14} className="animate-spin-slow" /> : <Play size={14} />}
+                Запустить обработку папки
+              </button>
+            </div>
           </div>
         </>
       )}

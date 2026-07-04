@@ -477,27 +477,19 @@ async def graph_html(
 ):
     """Полноэкранный интерактивный HTML-граф (PyVis) из SQLite."""
     check_permission(user, "read")
-    from services.graph_view import facts_as_triples
+    from services.graph_view import load_graph_view, view_to_triples
     from visualizer import render_triples_html
 
-    store = get_store()
-    fetch_limit = min(max(limit * 2, limit), 15000)
-    facts = store.list_facts(
+    view = load_graph_view(
+        entity_name=entity_name,
         source_document=source_document,
+        limit=min(max(limit, 1), 500),
         role=user.get("role"),
-        limit=fetch_limit,
     )
-    triples = facts_as_triples(facts)
-    if entity_name:
-        needle = entity_name.strip().lower()
-        triples = [
-            t for t in triples
-            if needle in t["subject"].lower() or needle in t["object"].lower()
-        ]
-    triples = triples[: min(max(limit, 1), 10000)]
-    title = source_document or entity_name or "Nickel Knowledge Graph"
+    triples = view_to_triples(view)
+    title = entity_name or source_document or "Nickel Knowledge Graph"
     html = render_triples_html(triples, title=title)
-    audit_action(user, "graph.html", details={"source": source_document, "triples": len(triples)})
+    audit_action(user, "graph.html", details={"source": source_document, "entity": entity_name, "triples": len(triples)})
     return Response(html, media_type="text/html; charset=utf-8")
 
 
