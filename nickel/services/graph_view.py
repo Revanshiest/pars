@@ -86,19 +86,15 @@ def build_graph_view(
             or needle in (f.get("object") or "").lower()
         ]
 
-    if entity_name and neighbor_edge_limit is None:
-        neighbor_edge_limit = 10
-
-    if entity_name and neighbor_edge_limit:
-        # Для ego-графа берём все факты по документу / запросу, обрежем после сборки
-        pass
-    elif entity_name:
+    if entity_name:
         needle = entity_name.strip().lower()
+        canon = normalize_entity(entity_name, index=glossary_index).lower()
         seed = [
             f for f in pool
             if needle in (f.get("subject") or "").lower()
             or needle in (f.get("object") or "").lower()
-            or needle in normalize_entity(entity_name, index=glossary_index).lower()
+            or canon in (f.get("subject") or "").lower()
+            or canon in (f.get("object") or "").lower()
         ]
         if seed:
             canonical_names = set()
@@ -111,8 +107,7 @@ def build_graph_view(
                 if normalize_entity(f["subject"], index=glossary_index).lower() in canonical_names
                 or normalize_entity(f["object"], index=glossary_index).lower() in canonical_names
             ]
-
-    if not entity_name or not neighbor_edge_limit:
+    else:
         pool = pool[: max(limit, 1)]
 
     nodes: Dict[str, Dict[str, Any]] = {}
@@ -142,7 +137,7 @@ def build_graph_view(
             entry["aliases"] = n["aliases"]
         node_list.append(entry)
 
-    if entity_name and neighbor_edge_limit:
+    if entity_name:
         node_list, edges = _trim_to_entity_neighborhood(
             node_list, edges, entity_name, glossary_index, edge_limit=neighbor_edge_limit
         )
@@ -156,7 +151,6 @@ def build_graph_view(
             "facts_used": len(pool),
             "entity_filter": entity_name,
             "merged_by_name": True,
-            "neighbor_limit": neighbor_edge_limit,
         },
     }
 
@@ -207,9 +201,9 @@ def _trim_to_entity_neighborhood(
     edges: List[Dict[str, Any]],
     entity_name: str,
     glossary_index: Dict[str, str],
-    edge_limit: int = 10,
+    edge_limit: Optional[int] = None,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Центральный узел + до edge_limit связей (соседи)."""
+    """Центральный узел и все связи (edge_limit=None — без ограничения)."""
     center_ids = _find_center_node_ids(node_list, entity_name, glossary_index)
     if not center_ids:
         return [], []
@@ -218,13 +212,16 @@ def _trim_to_entity_neighborhood(
         e for e in edges
         if e["source"] in center_ids or e["target"] in center_ids
     ]
-    incident.sort(
-        key=lambda e: (
-            0 if e["source"] in center_ids and e["target"] in center_ids else 1,
-            -(len(e.get("label") or "")),
+    if edge_limit is not None:
+        incident.sort(
+            key=lambda e: (
+                0 if e["source"] in center_ids and e["target"] in center_ids else 1,
+                -(len(e.get("label") or "")),
+            )
         )
-    )
-    picked = incident[: max(edge_limit, 1)]
+        picked = incident[: max(edge_limit, 1)]
+    else:
+        picked = incident
 
     keep_ids = set(center_ids)
     for e in picked:
@@ -303,7 +300,6 @@ def load_graph_view(
         facts,
         entity_name=entity_name,
         limit=limit,
-        neighbor_edge_limit=10 if entity_name else None,
     )
     view["source_document"] = source_document
     view["documents"] = _document_counts(store)

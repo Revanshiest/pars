@@ -165,20 +165,23 @@ def hybrid_ranked_search(
                 elif term in desc_l or term in str(props.get("value") or "").lower():
                     text_match = max(text_match, 0.08)
         score = (0.55 + 0.35 * conf + text_match) * SOURCE_WEIGHTS["fact"]
+        from services.fact_format import fact_display_fields
+        display = fact_display_fields(fact)
         ranked[_result_key({"result_type": "fact", "id": fid})] = {
             "result_type": "fact",
             "id": fid,
             "score": score,
-            "title": f"{fact['subject']} —[{fact['relation']}]→ {fact['object']}",
-            "snippet": str((fact.get("properties") or {}))[:300],
+            "title": display["title"],
+            "snippet": display["answer"],
+            "answer": display["answer"],
+            "value": display["value"],
+            "description": display["description"],
             "metadata": {
                 "geography": fact.get("geography"),
                 "confidence": fact.get("confidence"),
                 "verification_status": fact.get("verification_status"),
                 "source_document": fact.get("source_document"),
                 "year": (fact.get("properties") or {}).get("year"),
-                "author": (fact.get("properties") or {}).get("author"),
-                "document_kind": (fact.get("properties") or {}).get("document_kind"),
             },
             "sources": ["sqlite"],
             "raw": fact,

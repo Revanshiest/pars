@@ -83,19 +83,31 @@ export default function SearchPage() {
   }
 
   const ranked = results?.ranked_results
-    || results?.results?.map(f => ({
-      result_type: 'fact',
-      id: f.id,
-      title: `${f.subject} —[${f.relation}]→ ${f.object}`,
-      snippet: JSON.stringify(f.matched_constraint || f.properties || {}).slice(0, 300),
-      score: f.confidence,
-      metadata: {
-        geography: f.geography,
-        verification_status: f.verification_status,
-        source_document: f.source_document,
-      },
-      raw: f,
-    }))
+    || results?.results?.map(f => {
+      const props = f.properties || f.matched_constraint || {}
+      const value = props.value
+      const desc = props.description
+      const answer = value
+        ? (desc && desc !== value ? `${value} — ${desc}` : String(value))
+        : (desc || `${f.subject} ${f.relation} ${f.object}`)
+      return {
+        result_type: 'fact',
+        id: f.id,
+        title: `${f.subject} —[${f.relation}]→ ${f.object}`,
+        snippet: answer,
+        answer,
+        value,
+        description: desc,
+        score: f.confidence,
+        metadata: {
+          geography: f.geography,
+          verification_status: f.verification_status,
+          source_document: f.source_document,
+          year: props.year,
+        },
+        raw: f,
+      }
+    })
     || []
 
   return (

@@ -468,8 +468,8 @@ export default function GraphPage() {
           </div>
           <p className="text-xs text-surface-400 mt-2">
             {entityMode
-              ? `Центр «${centerEntity}» — до 10 связей.`
-              : 'Обзор до 150 узлов. Введите термин — связи загрузятся автоматически.'}
+              ? `Центр «${centerEntity}» — все связи.`
+              : 'Обзор до 150 узлов. Введите термин — загрузятся все его связи.'}
           </p>
           <button type="button" onClick={reheat} className="btn-secondary w-full text-xs mt-2">
             <RotateCcw size={11} /> Пересчитать

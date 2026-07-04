@@ -9,6 +9,35 @@ const TYPE_META = {
   graph_edge: { label: 'Связь', icon: GitBranch, color: 'bg-amber-100 text-amber-700 border-amber-200' },
 }
 
+function formatFactBody(item) {
+  const value = item.value || item.raw?.properties?.value
+  const desc = item.description || item.raw?.properties?.description
+  const answer = item.answer || item.snippet
+  const year = item.metadata?.year || item.raw?.properties?.year
+
+  if (item.result_type !== 'fact') {
+    return item.snippet ? (
+      <p className="text-xs text-surface-400 mt-1.5 line-clamp-4">{item.snippet}</p>
+    ) : null
+  }
+
+  return (
+    <div className="mt-2 space-y-1">
+      {value && (
+        <p className="text-lg font-bold text-brand-700 leading-snug">{value}</p>
+      )}
+      {(desc || (!value && answer)) && (
+        <p className="text-sm text-surface-200 leading-relaxed">
+          {desc || answer}
+        </p>
+      )}
+      {year && (
+        <p className="text-xs text-surface-400">Год: {year}</p>
+      )}
+    </div>
+  )
+}
+
 export default function ResultCard({ item }) {
   const meta = TYPE_META[item.result_type] || {
     label: item.result_type,
@@ -49,11 +78,9 @@ export default function ResultCard({ item }) {
             ))}
           </div>
           <p className="text-sm font-semibold text-surface-100 leading-snug">{item.title}</p>
-          {item.snippet && (
-            <p className="text-xs text-surface-400 mt-1.5 line-clamp-3">{item.snippet}</p>
-          )}
+          {formatFactBody(item)}
           {item.metadata?.source_document && (
-            <p className="text-[10px] text-surface-400 mt-1">Источник: {item.metadata.source_document}</p>
+            <p className="text-[10px] text-surface-400 mt-2">Источник: {item.metadata.source_document}</p>
           )}
           {(item.result_type === 'entity' || item.result_type === 'fact' || item.result_type === 'graph_edge') && entityName && (
             <Link
