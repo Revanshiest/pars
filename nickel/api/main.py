@@ -35,6 +35,7 @@ from api.routers.analytics import router as analytics_router
 from api.routers.export import router as export_router
 from api.routers.glossary import router as glossary_router
 from api.routers.graph import router as graph_router
+from api.routers.notifications import router as notifications_router
 from api.routers.platform import router as platform_router
 from api.routers.search import router as search_router
 from api.routers.verification import router as verification_router
@@ -139,6 +140,7 @@ app.include_router(verification_router)
 app.include_router(analytics_router)
 app.include_router(export_router)
 app.include_router(graph_router)
+app.include_router(notifications_router)
 
 ADMIN_STATIC = Path(__file__).resolve().parent / "static" / "admin"
 if ADMIN_STATIC.is_dir():

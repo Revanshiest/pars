@@ -34,11 +34,6 @@ class DocumentAccessUpdate(BaseModel):
     access_level: str = Field(..., pattern="^(internal|partner|public)$")
 
 
-class SubscriptionCreate(BaseModel):
-    topic: str
-    filters: dict = {}
-
-
 class UserCreate(BaseModel):
     email: str = Field(..., min_length=5)
     name: str = Field(..., min_length=1)
@@ -56,30 +51,6 @@ class FirstAdminSetup(BaseModel):
     email: str = Field(..., min_length=5)
     name: str = Field(..., min_length=1)
     api_key: Optional[str] = Field(default=None, min_length=16)
-
-
-@router.get("/notifications")
-async def notifications(unread_only: bool = False, user=Depends(get_current_user)):
-    check_permission(user, "read")
-    return get_store().list_notifications(user["id"], unread_only)
-
-
-@router.post("/notifications/{notification_id}/read")
-async def mark_read(notification_id: str, user=Depends(get_current_user)):
-    get_store().mark_notification_read(notification_id, user["id"])
-    return {"read": notification_id}
-
-
-@router.post("/subscriptions")
-async def subscribe(body: SubscriptionCreate, user=Depends(get_current_user)):
-    check_permission(user, "subscribe")
-    sid = get_store().add_subscription(user["id"], body.topic, body.filters)
-    return {"id": sid, "topic": body.topic}
-
-
-@router.get("/subscriptions")
-async def list_subs(user=Depends(get_current_user)):
-    return get_store().list_subscriptions(user["id"])
 
 
 @router.get("/audit")
