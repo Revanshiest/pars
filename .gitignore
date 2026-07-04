@@ -20,6 +20,7 @@ __pycache__/
 *_yandex_graph.json
 global_cleaned_graph.json
 *.ttl
+!nickel/ontology/*.ttl
 extracted_images/
 
 # PyVis generated assets

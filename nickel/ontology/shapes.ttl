@@ -1,0 +1,36 @@
+@prefix kg: <http://rd.nickel.local/kg#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+kg:EntityShape a sh:NodeShape ;
+    sh:targetClass kg:Material, kg:Equipment, kg:Process, kg:Parameter,
+        kg:Metric, kg:Property, kg:Facility, kg:Expert, kg:Regulation,
+        kg:Publication, kg:Geography, kg:Document, kg:Concept, kg:Product,
+        kg:Experiment ;
+    sh:property [
+        sh:path kg:label ;
+        sh:datatype xsd:string ;
+        sh:minCount 1 ;
+        sh:message "Каждая сущность должна иметь kg:label" ;
+    ] .
+
+kg:RelationShape a sh:NodeShape ;
+    sh:targetSubjectsOf kg:usesMaterial, kg:operatesAtCondition, kg:producesOutput,
+        kg:describedIn, kg:validatedBy, kg:contradicts, kg:locatedIn,
+        kg:hasProperty, kg:partOf, kg:managedBy, kg:relatedTo, kg:canSubstitute ;
+    sh:property [
+        sh:path kg:confidence ;
+        sh:datatype xsd:float ;
+        sh:minInclusive 0.0 ;
+        sh:maxInclusive 1.0 ;
+    ] ;
+    sh:property [
+        sh:path kg:sourceDocument ;
+        sh:datatype xsd:string ;
+        sh:minCount 0 ;
+    ] ;
+    sh:property [
+        sh:path kg:geographyTag ;
+        sh:datatype xsd:string ;
+        sh:in ( "RU" "EN" "global" ) ;
+    ] .

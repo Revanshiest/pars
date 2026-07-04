@@ -1,0 +1,47 @@
+@prefix kg: <http://rd.nickel.local/kg#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# --- Classes (node types) ---
+kg:Material a owl:Class ; rdfs:label "Material" .
+kg:Equipment a owl:Class ; rdfs:label "Equipment" .
+kg:Process a owl:Class ; rdfs:label "Process" .
+kg:Parameter a owl:Class ; rdfs:label "Parameter" .
+kg:Metric a owl:Class ; rdfs:label "Metric" .
+kg:Property a owl:Class ; rdfs:label "Property" .
+kg:Facility a owl:Class ; rdfs:label "Facility" .
+kg:Expert a owl:Class ; rdfs:label "Expert" .
+kg:Regulation a owl:Class ; rdfs:label "Regulation" .
+kg:Publication a owl:Class ; rdfs:label "Publication" .
+kg:Geography a owl:Class ; rdfs:label "Geography" .
+kg:Document a owl:Class ; rdfs:label "Document" .
+kg:Concept a owl:Class ; rdfs:label "Concept" .
+kg:Product a owl:Class ; rdfs:label "Product" .
+kg:Experiment a owl:Class ; rdfs:label "Experiment" .
+
+# --- Object properties (relations) ---
+kg:usesMaterial a owl:ObjectProperty ; rdfs:label "uses_material" .
+kg:operatesAtCondition a owl:ObjectProperty ; rdfs:label "operates_at_condition" .
+kg:producesOutput a owl:ObjectProperty ; rdfs:label "produces_output" .
+kg:describedIn a owl:ObjectProperty ; rdfs:label "described_in" .
+kg:validatedBy a owl:ObjectProperty ; rdfs:label "validated_by" .
+kg:contradicts a owl:ObjectProperty ; rdfs:label "contradicts" .
+kg:locatedIn a owl:ObjectProperty ; rdfs:label "located_in" .
+kg:hasProperty a owl:ObjectProperty ; rdfs:label "has_property" .
+kg:partOf a owl:ObjectProperty ; rdfs:label "part_of" .
+kg:managedBy a owl:ObjectProperty ; rdfs:label "managed_by" .
+kg:relatedTo a owl:ObjectProperty ; rdfs:label "related_to" .
+kg:canSubstitute a owl:ObjectProperty ; rdfs:label "can_substitute" .
+
+# --- Datatype properties (metadata) ---
+kg:label a owl:DatatypeProperty ; rdfs:range xsd:string .
+kg:confidence a owl:DatatypeProperty ; rdfs:range xsd:float .
+kg:geographyTag a owl:DatatypeProperty ; rdfs:range xsd:string .
+kg:sourceDocument a owl:DatatypeProperty ; rdfs:range xsd:string .
+kg:sourceChunk a owl:DatatypeProperty ; rdfs:range xsd:string .
+kg:sourcePage a owl:DatatypeProperty ; rdfs:range xsd:string .
+kg:doi a owl:DatatypeProperty ; rdfs:range xsd:string .
+kg:updatedAt a owl:DatatypeProperty ; rdfs:range xsd:string .
+kg:version a owl:DatatypeProperty ; rdfs:range xsd:integer .
+kg:validFrom a owl:DatatypeProperty ; rdfs:range xsd:string .
