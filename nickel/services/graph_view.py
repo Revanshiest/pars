@@ -272,15 +272,33 @@ def load_graph_view(
         limit=fetch_limit,
     )
     if entity_name and len(facts) < 20:
-        extra = store.list_facts(
-            source_document=source_document,
-            role=role,
-            limit=fetch_limit,
-        )
-        seen = {f.get("id") for f in facts}
-        for f in extra:
-            if f.get("id") not in seen:
-                facts.append(f)
+        glossary_index = store.build_glossary_index()
+        from services.glossary import normalize_entity
+        canon = normalize_entity(entity_name, index=glossary_index)
+        extra_queries = {entity_name.strip(), canon}
+        for alias_q in extra_queries:
+            if not alias_q:
+                continue
+            extra = store.list_facts(
+                source_document=source_document,
+                query=alias_q,
+                role=role,
+                limit=fetch_limit,
+            )
+            seen = {f.get("id") for f in facts}
+            for f in extra:
+                if f.get("id") not in seen:
+                    facts.append(f)
+        if len(facts) < 20:
+            extra = store.list_facts(
+                source_document=source_document,
+                role=role,
+                limit=fetch_limit,
+            )
+            seen = {f.get("id") for f in facts}
+            for f in extra:
+                if f.get("id") not in seen:
+                    facts.append(f)
     view = build_graph_view(
         facts,
         entity_name=entity_name,

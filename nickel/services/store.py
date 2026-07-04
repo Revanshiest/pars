@@ -961,14 +961,63 @@ class PlatformStore:
             qpat = f"%{query.lower()}%"
             sql += (
                 " AND (LOWER(subject) LIKE ? OR LOWER(object) LIKE ?"
-                " OR LOWER(relation) LIKE ? OR LOWER(COALESCE(source_document, '')) LIKE ?)"
+                " OR LOWER(relation) LIKE ? OR LOWER(COALESCE(source_document, '')) LIKE ?"
+                " OR LOWER(COALESCE(json_extract(properties, '$.description'), '')) LIKE ?"
+                " OR LOWER(COALESCE(json_extract(properties, '$.value'), '')) LIKE ?)"
             )
-            params.extend([qpat, qpat, qpat, qpat])
+            params.extend([qpat, qpat, qpat, qpat, qpat, qpat])
         sql += " ORDER BY updated_at DESC LIMIT ?"
         params.append(limit)
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
             return [self._fact_row(r) for r in rows]
+
+    def search_facts(
+        self,
+        query: str,
+        *,
+        expanded_query: Optional[str] = None,
+        limit: int = 100,
+        **filters,
+    ) -> List[Dict]:
+        """Поиск фактов: сначала целая фраза, затем по ключевым словам."""
+        from services.query_tokens import extract_search_terms
+
+        facts = self.list_facts(query=query, limit=limit, **filters)
+        if facts:
+            return facts
+
+        terms = extract_search_terms(query, expanded_query or "")
+        if not terms:
+            return []
+
+        seen: set[str] = set()
+        ranked: List[tuple[int, Dict]] = []
+
+        for term in terms:
+            batch = self.list_facts(query=term, limit=limit, **filters)
+            for f in batch:
+                fid = f.get("id") or ""
+                if fid in seen:
+                    continue
+                seen.add(fid)
+                score = 0
+                subj = (f.get("subject") or "").lower()
+                obj = (f.get("object") or "").lower()
+                props = f.get("properties") or {}
+                desc = str(props.get("description") or "").lower()
+                val = str(props.get("value") or "").lower()
+                for t in terms:
+                    if t in subj or t in obj:
+                        score += 3
+                    elif t in desc or t in val:
+                        score += 2
+                    elif t in (f.get("relation") or "").lower():
+                        score += 1
+                ranked.append((score, f))
+
+        ranked.sort(key=lambda x: x[0], reverse=True)
+        return [f for _, f in ranked[:limit]]
 
     def _fact_row(self, row: sqlite3.Row) -> Dict:
         from services.verification import enrich_fact

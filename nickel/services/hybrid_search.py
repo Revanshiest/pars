@@ -91,7 +91,9 @@ def hybrid_ranked_search(
         except Exception:
             pass
 
-    facts = store.list_facts(
+    facts = store.search_facts(
+        query,
+        expanded_query=expanded,
         status=verification_status,
         geography=geography,
         min_confidence=min_confidence,
@@ -101,7 +103,6 @@ def hybrid_ranked_search(
         author=author,
         document_kind=document_kind,
         job_id=job_id,
-        query=query,
         limit=search_limit,
         role=role,
     )
@@ -148,7 +149,21 @@ def hybrid_ranked_search(
     for fact in facts:
         fid = fact.get("id") or fact.get("fact_id", "")
         conf = fact.get("confidence") or 0.5
-        text_match = 0.15 if query.lower() in fact["subject"].lower() or query.lower() in fact["object"].lower() else 0.0
+        subj_l = fact["subject"].lower()
+        obj_l = fact["object"].lower()
+        props = fact.get("properties") or {}
+        desc_l = str(props.get("description") or "").lower()
+        q_lower = query.lower()
+        text_match = 0.0
+        if q_lower in subj_l or q_lower in obj_l or q_lower in desc_l:
+            text_match = 0.15
+        else:
+            from services.query_tokens import extract_search_terms
+            for term in extract_search_terms(query, expanded):
+                if term in subj_l or term in obj_l:
+                    text_match = max(text_match, 0.12)
+                elif term in desc_l or term in str(props.get("value") or "").lower():
+                    text_match = max(text_match, 0.08)
         score = (0.55 + 0.35 * conf + text_match) * SOURCE_WEIGHTS["fact"]
         ranked[_result_key({"result_type": "fact", "id": fid})] = {
             "result_type": "fact",

@@ -153,28 +153,36 @@ export default function GraphPage() {
 
   useEffect(() => { xformRef.current = xform }, [xform])
 
+  const applyCenter = useCallback((name) => {
+    const p = {}
+    if (name) p.entity = name
+    if (sourceDoc) p.source = sourceDoc
+    setSearchParams(p)
+  }, [sourceDoc, setSearchParams])
+
   useEffect(() => {
     setSearch(centerEntity)
   }, [centerEntity])
 
+  // Авто-загрузка ego-графа при вводе
+  useEffect(() => {
+    const q = search.trim()
+    if (q === centerEntity) return undefined
+    if (!q) {
+      if (centerEntity) applyCenter('')
+      return undefined
+    }
+    const t = setTimeout(() => applyCenter(q), 500)
+    return () => clearTimeout(t)
+  }, [search, centerEntity, applyCenter])
+
   const apiNodes = graphData.nodes || []
   const apiEdges = graphData.edges || []
   const entityMode = Boolean(centerEntity.trim())
+  const pendingSearch = Boolean(search.trim() && search.trim() !== centerEntity)
 
-  const displayNodes = useMemo(() => {
-    if (entityMode) return apiNodes
-    if (!search.trim()) return apiNodes
-    const q = search.toLowerCase()
-    return apiNodes.filter(n => (n.name || '').toLowerCase().includes(q))
-  }, [apiNodes, search, entityMode])
-
-  const displayIds = useMemo(() => new Set(displayNodes.map(n => n.id)), [displayNodes])
-
-  const displayEdges = useMemo(() => {
-    if (entityMode) return apiEdges
-    if (!search.trim()) return apiEdges
-    return apiEdges.filter(e => displayIds.has(e.source) && displayIds.has(e.target))
-  }, [apiEdges, displayIds, search, entityMode])
+  const displayNodes = apiNodes
+  const displayEdges = apiEdges
 
   const connectedIds = useMemo(() => {
     if (!selected) return null
@@ -366,13 +374,6 @@ export default function GraphPage() {
   const selNode = apiNodes.find(n => n.id === selected)
   const nodeById = useMemo(() => Object.fromEntries(apiNodes.map(n => [n.id, n])), [apiNodes])
 
-  const applyCenter = (name) => {
-    const p = {}
-    if (name) p.entity = name
-    if (sourceDoc) p.source = sourceDoc
-    setSearchParams(p)
-  }
-
   const submitSearch = () => {
     const q = search.trim()
     applyCenter(q)
@@ -405,15 +406,13 @@ export default function GraphPage() {
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitSearch() }}
-              placeholder="Найти узел… (Enter)"
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitSearch() } }}
+              placeholder="Узел: медь, Cerro Verde…"
               className="input pl-8 py-2 text-xs"
             />
           </div>
-          {!entityMode && search.trim() && (
-            <button type="button" className="btn-primary w-full text-xs mt-2" onClick={submitSearch}>
-              Показать узел и связи
-            </button>
+          {!entityMode && search.trim() && pendingSearch && (
+            <p className="text-[10px] text-surface-400 mt-2">Загрузка связей…</p>
           )}
           {centerEntity && (
             <div className="mt-2 flex items-center gap-1 text-[10px] text-brand-600 bg-brand-50 rounded-lg px-2 py-1">
@@ -469,8 +468,8 @@ export default function GraphPage() {
           </div>
           <p className="text-xs text-surface-400 mt-2">
             {entityMode
-              ? 'Центральный узел и до 10 связей. Enter в поиске — новый центр.'
-              : 'Обзор до 150 узлов. Введите термин и нажмите Enter — узел + до 10 связей.'}
+              ? `Центр «${centerEntity}» — до 10 связей.`
+              : 'Обзор до 150 узлов. Введите термин — связи загрузятся автоматически.'}
           </p>
           <button type="button" onClick={reheat} className="btn-secondary w-full text-xs mt-2">
             <RotateCcw size={11} /> Пересчитать

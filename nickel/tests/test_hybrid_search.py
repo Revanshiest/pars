@@ -36,6 +36,45 @@ def test_hybrid_search_sqlite_only(tmp_platform_db, monkeypatch):
     assert len(result["ranked_results"]) >= 1
 
 
+def test_hybrid_search_natural_language(tmp_platform_db, monkeypatch):
+    monkeypatch.setenv("GLOSSARY_USE_BGE", "false")
+    monkeypatch.setenv("SEARCH_USE_VECTORS", "false")
+    monkeypatch.setenv("SEARCH_USE_GRAPH", "false")
+
+    from services.auth_bootstrap import bootstrap_admin_from_env
+    from services.hybrid_search import hybrid_ranked_search
+    from services.store import get_store
+
+    bootstrap_admin_from_env()
+    store = get_store()
+    store.upsert_facts(
+        [{
+            "subject": "Cerro Verde",
+            "subject_type": "Facility",
+            "relation": "has_property",
+            "object": "Ore treated per year",
+            "object_type": "Metric",
+            "properties": {
+                "value": "3,900,000 tonnes",
+                "description": "Ore treated per year at Cerro Verde concentrator",
+                "year": "2010",
+            },
+            "confidence": 1.0,
+        }],
+        job_id="test-job",
+        source_document="test-doc",
+    )
+
+    result = hybrid_ranked_search(
+        "Какая годовая переработка руды на Cerro Verde?",
+        limit=5,
+        role="admin",
+    )
+    assert result["counts"]["facts"] >= 1
+    assert len(result["ranked_results"]) >= 1
+    assert "Cerro Verde" in result["ranked_results"][0]["title"]
+
+
 def test_import_triples_json_file(tmp_platform_db, monkeypatch):
     monkeypatch.setenv("INDEX_QDRANT_ON_IMPORT", "false")
 
