@@ -1,5 +1,17 @@
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
+function parseContentDispositionFilename(cd, fallback) {
+  if (!cd) return fallback
+  const utf8 = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8[1])
+    } catch { /* ignore */ }
+  }
+  const plain = cd.match(/filename="([^"]+)"/i)
+  return plain?.[1] || fallback
+}
+
 function headers(apiKey, token) {
   const h = { Accept: 'application/json' }
   if (token) h.Authorization = `Bearer ${token}`
@@ -160,6 +172,32 @@ export const api = {
 
   exportReport: (auth, topic, format) =>
     request('/api/v1/export', { ...auth, method: 'POST', body: { topic, format } }),
+
+  exportDownload: async (auth, topic, format) => {
+    const res = await fetch(`${API_BASE}/api/v1/export`, {
+      method: 'POST',
+      headers: {
+        ...headers(auth.apiKey, auth.token),
+        'Content-Type': 'application/json',
+        Accept: '*/*',
+      },
+      body: JSON.stringify({ topic, format, download: true }),
+    })
+    if (!res.ok) {
+      let detail = res.statusText
+      try {
+        const err = await res.json()
+        detail = err.detail || JSON.stringify(err)
+      } catch { /* ignore */ }
+      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+    }
+    const blob = await res.blob()
+    const ext = format === 'jsonld' ? 'jsonld' : format
+    const cd = res.headers.get('content-disposition') || ''
+    const fallback = `${topic.slice(0, 40).replace(/[^\w\-]+/g, '_') || 'report'}.${ext}`
+    const filename = parseContentDispositionFilename(cd, fallback)
+    return { blob, filename }
+  },
 
   downloadExportUrl: (topic, format) =>
     `${API_BASE}/api/v1/export/${encodeURIComponent(topic)}/download?format=${encodeURIComponent(format)}`,

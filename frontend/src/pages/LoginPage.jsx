@@ -8,12 +8,16 @@ export default function LoginPage() {
   const [key, setKey] = useState('')
   const [pending, setPending] = useState(false)
   const [setupRequired, setSetupRequired] = useState(false)
+  const [loginHint, setLoginHint] = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
     fetch('/api/v1/auth/status')
       .then(r => r.json())
-      .then(s => setSetupRequired(!!s.setup_required))
+      .then(s => {
+        setSetupRequired(!!s.setup_required)
+        if (s.login_hint?.api_key) setLoginHint(s.login_hint)
+      })
       .catch(() => {})
   }, [])
 
@@ -50,7 +54,28 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {setupRequired && (
+        {loginHint && (
+          <div className="rounded-xl border border-brand-200 bg-brand-50 p-4 space-y-2 text-sm">
+            <p className="font-semibold text-brand-700">Доступ для входа</p>
+            <div className="space-y-1 text-xs">
+              <p className="text-surface-600">
+                Email: <span className="font-mono text-surface-900">{loginHint.email}</span>
+              </p>
+              <p className="text-surface-600 break-all">
+                API Key: <span className="font-mono text-surface-900 select-all">{loginHint.api_key}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-secondary w-full text-xs"
+              onClick={() => setKey(loginHint.api_key)}
+            >
+              Подставить ключ
+            </button>
+          </div>
+        )}
+
+        {setupRequired && !loginHint && (
           <p className="text-sm text-surface-400 text-center">
             Пример: <code className="text-xs">AUTH_ADMIN=admin@org|Admin|your-api-key-min-16</code>
           </p>

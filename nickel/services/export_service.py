@@ -20,7 +20,7 @@ def export_markdown(topic: str, review: Optional[Dict] = None) -> str:
         f"**Верифицировано:** {review['verified_sources']}  ",
         f"**Синтез:** {review.get('synthesis_mode', 'structured')}\n",
         "## Резюме\n",
-        review["summary"] + "\n",
+        (review.get("summary") or "Нет данных для резюме по теме.") + "\n",
     ]
 
     if review.get("year_summary"):

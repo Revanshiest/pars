@@ -213,10 +213,18 @@ class UsersMixin:
 
         spec = env_admin_spec()
         count = self.count_users()
+        login_hint = None
+        if spec:
+            login_hint = {
+                "email": spec["email"],
+                "name": spec["name"],
+                "api_key": spec["api_key"],
+            }
         return {
             "setup_required": count == 0,
             "admin_from_env": spec is not None,
             "env_admin_email": spec["email"] if spec else None,
+            "login_hint": login_hint,
             "users_count": count,
             "roles": ROLES,
         }

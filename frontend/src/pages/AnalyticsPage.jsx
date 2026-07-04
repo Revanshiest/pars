@@ -121,26 +121,17 @@ export default function AnalyticsPage() {
 
   const doExport = async (format) => {
     setExportMsg('')
+    setError('')
     try {
-      await api.exportReport(auth, topic, format)
-      const url = api.downloadExportUrl(topic, format)
-      const res = await fetch(url, {
-        headers: {
-          ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
-          ...(auth.apiKey ? { 'X-API-Key': auth.apiKey } : {}),
-        },
-      })
-      if (!res.ok) throw new Error('Не удалось скачать файл')
-      const blob = await res.blob()
-      const ext = format === 'jsonld' ? 'jsonld' : format
+      const { blob, filename } = await api.exportDownload(auth, topic, format)
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = `${topic.slice(0, 40).replace(/[^\w\-]+/g, '_')}.${ext}`
+      a.download = filename
       a.click()
       URL.revokeObjectURL(a.href)
-      setExportMsg(`Файл .${ext} скачан`)
+      setExportMsg(`Файл ${filename} скачан`)
     } catch (e) {
-      setError(e.message)
+      setError(e.message || 'Не удалось экспортировать отчёт')
     }
   }
 
