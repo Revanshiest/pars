@@ -480,7 +480,7 @@ async def graph_html(
     """Полноэкранный интерактивный HTML-граф (PyVis) из SQLite."""
     check_permission(user, "read")
     from services.graph_view import load_graph_view, view_to_triples
-    from visualizer import render_triples_html
+    from services.html_visualizer import render_triples_html
 
     view = load_graph_view(
         entity_name=entity_name,

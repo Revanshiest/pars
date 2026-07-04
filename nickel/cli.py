@@ -108,7 +108,7 @@ def cmd_mvp(args: argparse.Namespace) -> int:
 
 
 def cmd_visualize(args: argparse.Namespace) -> int:
-    from visualizer import generate_html
+    from services.html_visualizer import generate_html
 
     out_dir = str(Path(args.output).parent)
     generate_html(args.input, out_dir)
