@@ -55,8 +55,10 @@ function AssistantMessage({ msg }) {
           <p className="text-sm text-surface-100 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
           {msg.confidence != null && (
             <p className="text-[10px] text-surface-400 mt-3">
-              Уверенность ~{Math.round(msg.confidence * 100)}%
-              {msg.llm_synthesized ? ' · LLM' : ' · база знаний'}
+              YandexGPT
+              {msg.toolsUsed?.length > 0 && (
+                <span> · инструменты: {msg.toolsUsed.join(', ')}</span>
+              )}
             </p>
           )}
         </div>
@@ -131,6 +133,7 @@ export default function SearchPage() {
         sources: data.sources || data.ranked_results || [],
         confidence: data.confidence,
         llm_synthesized: data.llm_synthesized,
+        toolsUsed: data.tools_used || data.tool_calls?.map(t => t.tool) || [],
       }])
     } catch (err) {
       setError(err.message)
@@ -159,7 +162,7 @@ export default function SearchPage() {
           Ассистент базы знаний
         </h2>
         <p className="text-xs text-surface-400 mt-1">
-          Задайте вопрос — ассистент найдёт факты в базе и сформулирует ответ
+          YandexGPT + инструменты базы знаний · не более 1 запроса к ИИ на ответ
         </p>
       </div>
 
@@ -199,7 +202,7 @@ export default function SearchPage() {
             </div>
             <div className="card p-4 flex items-center gap-2 text-sm text-surface-400">
               <Loader2 size={16} className="animate-spin-slow text-brand-600" />
-              Ищу в базе знаний…
+              Поиск в базе и генерация ответа YandexGPT…
             </div>
           </div>
         )}

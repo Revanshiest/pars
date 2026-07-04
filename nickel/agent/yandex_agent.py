@@ -1,0 +1,267 @@
+"""Чат-агент: инструменты → контекст из БД → один запрос YandexGPT → ответ."""
+
+from __future__ import annotations
+
+import json
+from typing import Any, Dict, List, Optional
+
+from agent.tool_registry import catalog_for_prompt, select_tools
+from agent.tools import SearchTools
+from services.fact_format import fact_display_fields, format_fact_answer
+from services.yandex_llm import yandex_complete
+
+
+SYNTHESIS_SYSTEM = """Ты — эксперт-аналитик R&D в горно-металлургии (медь, никель, процессы, оборудование).
+Отвечай на русском языке развёрнуто и структурированно, как коллеге-инженеру.
+
+Правила:
+1. Используй ТОЛЬКО данные из блока «Контекст инструментов» ниже. Не выдумывай факты.
+2. Если данных мало — честно скажи, чего не хватает, и что можно уточнить.
+3. Числа и единицы указывай точно, как в источнике.
+4. В конце добавь строку «Источники: …» с названиями документов, если они есть в контексте.
+5. Не выводи JSON, score, технические метки инструментов.
+6. Структура ответа: краткий прямой ответ → детали/пояснение → при необходимости список связанных фактов.
+"""
+
+
+class YandexKnowledgeAgent:
+    """Агент с набором tools и ровно одним вызовом YandexGPT на ответ."""
+
+    def __init__(self):
+        self.tools = SearchTools()
+
+    def _execute_tool(self, name: str, arguments: Dict[str, Any], role: Optional[str]) -> Dict[str, Any]:
+        args = dict(arguments)
+        if role:
+            args["role"] = role
+
+        if name == "search_facts":
+            return self.tools.execute("hybrid_search", args)
+
+        if name == "compare_practices":
+            return self.tools.execute("compare_practices", args)
+
+        if name == "numeric_search":
+            from services.numeric_query import search_by_numeric_query
+            return search_by_numeric_query(args.get("query", ""), limit=args.get("limit", 20))
+
+        if name == "explore_graph":
+            return self._explore_graph_sqlite(
+                args.get("entity_name", ""),
+                limit=args.get("limit", 20),
+                role=role,
+            )
+
+        if name == "glossary_lookup":
+            from services.glossary import text_glossary_lookup
+            matches = text_glossary_lookup(args.get("text", ""), top_k=8)
+            return {"matches": matches, "count": len(matches)}
+
+        if name == "knowledge_stats":
+            from services.store import get_store
+            store = get_store()
+            facts = store.list_facts(role=role, limit=1)
+            with store._connect() as conn:
+                facts_total = conn.execute("SELECT COUNT(*) FROM verified_facts").fetchone()[0]
+                glossary = conn.execute("SELECT COUNT(*) FROM glossary").fetchone()[0]
+                docs = conn.execute(
+                    "SELECT COUNT(DISTINCT source_document) FROM verified_facts WHERE source_document IS NOT NULL"
+                ).fetchone()[0]
+            return {
+                "facts_total": facts_total,
+                "glossary_terms": glossary,
+                "source_documents": docs,
+                "sample_fact_exists": bool(facts),
+            }
+
+        return {"error": f"Unknown tool: {name}"}
+
+    def _explore_graph_sqlite(
+        self,
+        entity_name: str,
+        *,
+        limit: int = 20,
+        role: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        from services.graph_view import load_graph_view, view_to_triples
+        if not entity_name.strip():
+            return {"entity": entity_name, "edges": [], "triples": []}
+        try:
+            view = load_graph_view(entity_name=entity_name, limit=limit, role=role)
+            triples = view_to_triples(view)
+            edges = []
+            for t in triples[:limit]:
+                edges.append({
+                    "source": t["subject"],
+                    "relation": t["relation"],
+                    "target": t["object"],
+                })
+            return {
+                "entity": entity_name,
+                "nodes": len(view.get("nodes", [])),
+                "edges": edges,
+                "triples": triples[:limit],
+            }
+        except Exception as exc:
+            return {"entity": entity_name, "error": str(exc), "edges": []}
+
+    def _format_tool_context(self, tool_name: str, result: Dict[str, Any]) -> str:
+        if result.get("error"):
+            return f"[{tool_name}] Ошибка: {result['error']}"
+
+        if tool_name == "search_facts":
+            items = result.get("results") or result.get("ranked_results") or []
+            lines = []
+            for i, item in enumerate(items[:12], 1):
+                if item.get("result_type") == "fact":
+                    raw = item.get("raw") or item
+                    d = fact_display_fields(raw) if raw.get("subject") else item
+                    src = (item.get("metadata") or {}).get("source_document") or raw.get("source_document", "")
+                    lines.append(f"{i}. {d.get('title', item.get('title'))}: {d.get('answer') or item.get('answer')} [{src}]")
+                else:
+                    lines.append(f"{i}. {item.get('title', '—')}: {(item.get('snippet') or '')[:200]}")
+            return f"[search_facts] Найдено {len(items)} результатов:\n" + ("\n".join(lines) if lines else "нет")
+
+        if tool_name == "compare_practices":
+            comp = result.get("comparison") or {}
+            parts = [comp.get("summary") or "Сравнение RU vs мир"]
+            if comp.get("shared_topics"):
+                parts.append("Общее: " + ", ".join(comp["shared_topics"][:6]))
+            if comp.get("ru_only_topics"):
+                parts.append("Только RU: " + ", ".join(comp["ru_only_topics"][:5]))
+            if comp.get("global_only_topics"):
+                parts.append("Только global: " + ", ".join(comp["global_only_topics"][:5]))
+            return "[compare_practices]\n" + "\n".join(parts)
+
+        if tool_name == "numeric_search":
+            rows = result.get("results") or []
+            lines = []
+            for r in rows[:8]:
+                props = r.get("properties") or r.get("matched_constraint") or {}
+                val = props.get("value") or props.get("description") or ""
+                lines.append(f"- {r.get('subject')} → {r.get('object')}: {val}")
+            return f"[numeric_search] {len(rows)} фактов:\n" + ("\n".join(lines) if lines else "нет")
+
+        if tool_name == "explore_graph":
+            edges = result.get("edges") or []
+            lines = [
+                f"- {e.get('source')} —[{e.get('relation')}]-> {e.get('target')}"
+                for e in edges[:15]
+            ]
+            return f"[explore_graph] Сущность «{result.get('entity')}», связей {len(edges)}:\n" + (
+                "\n".join(lines) if lines else "нет связей"
+            )
+
+        if tool_name == "glossary_lookup":
+            matches = result.get("matches") or []
+            lines = [f"- {m.get('canonical')} ← {m.get('matched_form')} (score {m.get('score')})" for m in matches[:8]]
+            return f"[glossary_lookup] {len(matches)} совпадений:\n" + ("\n".join(lines) if lines else "нет")
+
+        if tool_name == "knowledge_stats":
+            return (
+                f"[knowledge_stats] Фактов: {result.get('facts_total')}, "
+                f"документов: {result.get('source_documents')}, "
+                f"терминов глоссария: {result.get('glossary_terms')}"
+            )
+
+        return f"[{tool_name}] {json.dumps(result, ensure_ascii=False)[:1500]}"
+
+    def _collect_sources(self, tool_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        ranked: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        for tr in tool_results:
+            data = tr.get("result", {})
+            for item in data.get("results", []) + data.get("ranked_results", []):
+                fid = str(item.get("id", item.get("title", "")))
+                if fid in seen:
+                    continue
+                seen.add(fid)
+                if item.get("result_type") == "fact":
+                    raw = item.get("raw") or item
+                    d = fact_display_fields(raw)
+                    item = {**item, "answer": d["answer"], "value": d["value"], "title": d["title"]}
+                ranked.append(item)
+            for e in data.get("edges", []):
+                ranked.append({
+                    "result_type": "graph_edge",
+                    "title": f"{e.get('source')} → {e.get('target')}",
+                    "answer": e.get("relation"),
+                    "snippet": e.get("relation"),
+                })
+        ranked.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return ranked[:15]
+
+    async def query(
+        self,
+        question: str,
+        max_iterations: int = 5,
+        role: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        plan = select_tools(question)[:max_iterations]
+        tool_calls: List[Dict[str, Any]] = []
+        tool_results: List[Dict[str, Any]] = []
+        context_blocks: List[str] = []
+
+        for step in plan:
+            name = step["name"]
+            args = step.get("arguments") or {}
+            result = self._execute_tool(name, args, role)
+            tool_calls.append({"tool": name, "args": args, "result_count": _result_count(result)})
+            tool_results.append({"tool": name, "result": result})
+            context_blocks.append(self._format_tool_context(name, result))
+
+        tools_used = [s["name"] for s in plan]
+        context_text = "\n\n".join(context_blocks) if context_blocks else "Контекст пуст."
+
+        user_prompt = (
+            f"Вопрос пользователя:\n{question}\n\n"
+            f"Использованы инструменты: {', '.join(tools_used)}\n"
+            f"Доступные инструменты системы:\n{catalog_for_prompt()}\n\n"
+            f"--- Контекст инструментов ---\n{context_text}\n\n"
+            f"Сформулируй полный ответ на вопрос."
+        )
+
+        try:
+            answer = await yandex_complete(SYNTHESIS_SYSTEM, user_prompt, temperature=0.25)
+            llm_ok = True
+        except Exception as exc:
+            answer = self._fallback_answer(question, tool_results, str(exc))
+            llm_ok = False
+
+        sources = self._collect_sources(tool_results)
+        confidence = min(0.95, 0.4 + 0.05 * len(sources))
+
+        return {
+            "question": question,
+            "answer": answer,
+            "sources": sources,
+            "ranked_results": sources,
+            "tool_calls": tool_calls,
+            "tools_used": tools_used,
+            "pipeline": "yandex_agent",
+            "confidence": confidence,
+            "llm_synthesized": llm_ok,
+            "yandex_requests": 1 if llm_ok else 0,
+        }
+
+    def _fallback_answer(
+        self,
+        question: str,
+        tool_results: List[Dict[str, Any]],
+        error: str,
+    ) -> str:
+        lines = [f"YandexGPT недоступен ({error}). Данные из базы знаний:\n"]
+        for tr in tool_results:
+            lines.append(self._format_tool_context(tr["tool"], tr["result"]))
+        if len(lines) == 1:
+            return "Не удалось получить данные. Проверьте YANDEX_API_KEY и YANDEX_FOLDER_ID."
+        return "\n\n".join(lines)
+
+
+def _result_count(result: Dict[str, Any]) -> int:
+    for key in ("results", "ranked_results", "edges", "matches", "triples"):
+        if isinstance(result.get(key), list):
+            return len(result[key])
+    if result.get("facts_total") is not None:
+        return int(result["facts_total"])
+    return 0

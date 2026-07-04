@@ -79,6 +79,8 @@ class AgentQueryResponse(BaseModel):
     pipeline: Optional[str] = None
     confidence: Optional[float] = None
     llm_synthesized: Optional[bool] = None
+    tools_used: Optional[List[str]] = None
+    yandex_requests: Optional[int] = None
 
 
 class GraphViewResponse(BaseModel):

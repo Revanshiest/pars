@@ -77,8 +77,6 @@ services:
       SEARCH_USE_GRAPH: ${SEARCH_USE_GRAPH:-false}
       INDEX_QDRANT_ON_IMPORT: ${INDEX_QDRANT_ON_IMPORT:-false}
       ENTITY_RESOLUTION_USE_BGE: ${ENTITY_RESOLUTION_USE_BGE:-false}
-      YANDEX_API_KEY: ${YANDEX_API_KEY:-}
-      YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID:-}
       STRICT_SHACL: ${STRICT_SHACL:-true}
       UPLOAD_DIR: /app/data/uploads
       OUTPUT_DIR: /app/data/outputs

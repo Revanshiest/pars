@@ -4,8 +4,6 @@
 
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.auth import apply_search_acl, audit_action, check_permission, get_current_user
@@ -62,18 +60,13 @@ async def graph_search(req: GraphQueryRequest, user=Depends(get_current_user)):
 async def agent_search(req: AgentQueryRequest, user=Depends(get_current_user)):
     check_permission(user, "search")
     audit_action(user, "search.agent", details={"question": req.question})
-    from services.search_runtime import run_search
 
     role = user.get("role")
-    use_llm = os.getenv("AGENT_USE_LLM", "false").lower() == "true"
-    if use_llm:
-        result = await search_agent.query_with_llm(req.question, role=role)
-    else:
-        result = await run_search(
-            search_agent.query,
-            req.question,
-            req.max_iterations,
-            role,
-        )
+    try:
+        result = await search_agent.query(req.question, max_iterations=req.max_iterations, role=role)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, f"Chat agent unavailable: {exc}") from exc
     result = apply_search_acl(user, result)
     return AgentQueryResponse(**result)

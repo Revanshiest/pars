@@ -12,14 +12,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from api.jobs import JobStore
-from agent.search_agent import KnowledgeAgent
+from agent.yandex_agent import YandexKnowledgeAgent
 from services.pipeline_runner import run_full_pipeline
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "data/uploads")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "data/outputs")
 
 job_store = JobStore()
-search_agent = KnowledgeAgent()
+search_agent = YandexKnowledgeAgent()
 _pipeline_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pipeline")
 
 
