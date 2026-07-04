@@ -39,8 +39,12 @@ class JobLogEntry(BaseModel):
 
 class IngestFolderRequest(BaseModel):
     folder_path: str = Field(..., min_length=1, description="Путь на сервере, напр. data/inbox/batch1")
-    extractor: Optional[str] = Field(default=None, description="ollama | yandex | auto")
+    extractor: Optional[str] = Field(default=None, description="ollama | yandex | auto (только mode=full)")
     recursive: bool = False
+    mode: str = Field(
+        default="full",
+        description="full — LLM-пайплайн; import_pairs — пары doc+json по имени",
+    )
 
 
 class SemanticSearchRequest(BaseModel):
@@ -73,6 +77,12 @@ class AgentQueryResponse(BaseModel):
     tool_calls: List[Dict[str, Any]]
     ranked_results: Optional[List[Dict[str, Any]]] = None
     pipeline: Optional[str] = None
+
+
+class GraphViewResponse(BaseModel):
+    nodes: List[Dict[str, str]]
+    edges: List[Dict[str, str]]
+    center: Optional[str] = None
 
 
 class HealthResponse(BaseModel):

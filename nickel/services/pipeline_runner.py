@@ -110,15 +110,21 @@ async def _extract_from_text_document(
     return all_triples, chunks, markdown
 
 
-async def run_full_pipeline(
+async def _finalize_pipeline(
+    *,
+    triple_dicts: List[Dict[str, Any]],
+    chunks: List[Dict[str, Any]],
+    markdown: str,
+    document_metadata: Dict[str, Any],
     filepath: str,
     job_id: str,
-    llm_extractor=None,
-    on_progress: Optional[ProgressCallback] = None,
-    output_dir: str = "data/outputs",
-    extractor_backend: Optional[str] = None,
+    output_dir: str,
+    on_progress: Optional[ProgressCallback],
+    extraction_backend: str = "import",
+    index_entities: bool = True,
+    index_chunks: bool = True,
 ) -> Dict[str, Any]:
-    """Полный цикл с поддержкой PDF/DOCX/Excel и Yandex/Ollama."""
+    """Общие этапы после извлечения/импорта: glossary → SHACL → SQLite/Neo4j/Qdrant."""
 
     def progress(stage: str, current: int, total: int, message: Optional[str] = None):
         if on_progress:
@@ -126,39 +132,8 @@ async def run_full_pipeline(
 
     os.makedirs(output_dir, exist_ok=True)
     basename = Path(filepath).stem
-    suffix = Path(filepath).suffix.lower()
     store = get_store()
-
-    progress("route", 0, 1, f"Определение типа файла: {suffix}")
-    doc_kind = detect_document_kind(filepath)
-    chunks: List[Dict[str, Any]] = []
-    markdown = ""
-
-    if suffix in EXCEL_EXTENSIONS:
-        progress("extract", 0, 1, "Извлечение из Excel (Smart Mapper)")
-        triple_dicts, excel_meta = await extract_triples_from_excel(filepath)
-        extraction_backend = "excel_mapper"
-        document_metadata = excel_meta
-    else:
-        if suffix not in TEXT_EXTENSIONS:
-            raise ValueError(f"Unsupported format: {suffix}")
-
-        extractor = llm_extractor or get_text_extractor(extractor_backend)
-        extraction_backend = extractor_backend or os.getenv("EXTRACTOR_BACKEND", "auto")
-        if type(extractor).__name__ == "YandexExtractorAdapter":
-            extraction_backend = "yandex"
-        elif type(extractor).__name__ == "OllamaExtractorAdapter":
-            extraction_backend = "ollama"
-
-        progress("ingest", 0, 1, "Чтение документа")
-        triple_dicts, chunks, markdown = await _extract_from_text_document(
-            filepath, extractor, on_progress
-        )
-        document_metadata = {
-            "source_file": os.path.basename(filepath),
-            "document_kind": doc_kind["kind"],
-            "label": doc_kind["label"],
-        }
+    doc_kind = detect_document_kind(filepath, markdown or "")
 
     triple_dicts = filter_valid_triples(triple_dicts)
 
@@ -167,12 +142,14 @@ async def run_full_pipeline(
         triple_dicts, filepath, markdown or json.dumps(document_metadata)
     )
 
-    progress("entity_resolution", 0, 1, "Entity resolution (post_processor)")
+    progress("entity_resolution", 0, 1, "Entity resolution")
     triple_dicts, er_stats = await resolve_entities(triple_dicts)
 
     progress("numeric_extract", 0, 1, "Извлечение числовых параметров (regex+validator)")
     from services.numeric_parser import enrich_triples_with_numerics
-    triple_dicts, numeric_stats = enrich_triples_with_numerics(triple_dicts, markdown or os.path.basename(filepath))
+    triple_dicts, numeric_stats = enrich_triples_with_numerics(
+        triple_dicts, markdown or os.path.basename(filepath)
+    )
 
     from services.document_metadata import enrich_document_metadata
     from services.glossary import detect_geography
@@ -190,13 +167,19 @@ async def run_full_pipeline(
         props.setdefault("document_kind", document_metadata.get("document_kind", doc_kind.get("kind")))
 
     progress("glossary", 0, 1, "Нормализация через глоссарий (BGE)")
+
+    def glossary_progress(current: int, total: int, message: Optional[str] = None):
+        progress("glossary", current, max(total, 1), message)
+
     triple_dicts, glossary_stats = normalize_triples(
-        triple_dicts, document_text=markdown or os.path.basename(filepath)
+        triple_dicts,
+        document_text=markdown or os.path.basename(filepath),
+        on_progress=glossary_progress,
     )
 
-    doi = None
+    doi = document_metadata.get("doi")
     from services.fair_metadata import attach_provenance, build_fair_metadata, extract_doi
-    if markdown:
+    if not doi and markdown:
         doi = extract_doi(markdown)
     fair = build_fair_metadata(
         source_document=basename,
@@ -242,6 +225,7 @@ async def run_full_pipeline(
             "document_metadata": document_metadata,
             "triples": triple_dicts,
             "shacl": shacl_result,
+            "chunks": chunks or None,
         }, f, indent=2, ensure_ascii=False)
 
     progress("rdf", 0, 1, "Экспорт RDF")
@@ -280,17 +264,18 @@ async def run_full_pipeline(
             "author": document_metadata.get("author"),
             "geography": document_metadata.get("geography"),
         }
-        if chunks:
+        if index_chunks and chunks:
             qdrant_stats["chunks"] = indexer.index_chunks(
                 chunks, job_id, basename, metadata=chunk_meta
             )
-        entities = {}
-        for t in triple_dicts:
-            entities[(t["subject"], t["subject_type"])] = {"name": t["subject"], "type": t["subject_type"]}
-            entities[(t["object"], t["object_type"])] = {"name": t["object"], "type": t["object_type"]}
-        qdrant_stats["entities"] = indexer.index_entities(
-            list(entities.values()), job_id, metadata=chunk_meta
-        )
+        if index_entities and triple_dicts:
+            entities = {}
+            for t in triple_dicts:
+                entities[(t["subject"], t["subject_type"])] = {"name": t["subject"], "type": t["subject_type"]}
+                entities[(t["object"], t["object_type"])] = {"name": t["object"], "type": t["object_type"]}
+            qdrant_stats["entities"] = indexer.index_entities(
+                list(entities.values()), job_id, metadata=chunk_meta
+            )
     except Exception as e:
         qdrant_stats = {"error": str(e)}
 
@@ -318,3 +303,244 @@ async def run_full_pipeline(
         "neo4j": neo4j_stats,
         "qdrant": qdrant_stats,
     }
+
+
+async def run_import_json_pipeline(
+    json_path: str,
+    job_id: str,
+    on_progress: Optional[ProgressCallback] = None,
+    output_dir: str = "data/outputs",
+    index_chunks: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Импорт готового JSON с тройками в SQLite + Neo4j (+ Qdrant entities/chunks если есть."""
+
+    def progress(stage: str, current: int, total: int, message: Optional[str] = None):
+        if on_progress:
+            on_progress(stage, current, total, message)
+
+    progress("import", 0, 1, "Чтение JSON")
+    with open(json_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    if isinstance(data, list):
+        triple_dicts = data
+        document_metadata: Dict[str, Any] = {}
+        chunks: List[Dict[str, Any]] = []
+    else:
+        triple_dicts = data.get("triples") or []
+        document_metadata = data.get("document_metadata") or {}
+        chunks = data.get("chunks") or []
+
+    if not triple_dicts:
+        raise ValueError("JSON не содержит triples")
+
+    source_file = document_metadata.get("source_file") or Path(json_path).stem
+    for suffix in ("_extracted", "_yandex_graph"):
+        if source_file.endswith(suffix):
+            source_file = source_file[: -len(suffix)]
+    virtual_path = str(Path(json_path).parent / source_file)
+
+    document_metadata.setdefault("source_file", os.path.basename(source_file))
+    markdown = document_metadata.get("markdown") or ""
+    chunk_index = index_chunks if index_chunks is not None else bool(chunks)
+
+    return await _finalize_pipeline(
+        triple_dicts=triple_dicts,
+        chunks=chunks,
+        markdown=markdown,
+        document_metadata=document_metadata,
+        filepath=virtual_path,
+        job_id=job_id,
+        output_dir=output_dir,
+        on_progress=on_progress,
+        extraction_backend="json_import",
+        index_entities=True,
+        index_chunks=chunk_index,
+    )
+
+
+async def run_import_pair_pipeline(
+    json_path: str,
+    doc_path: str,
+    job_id: str,
+    on_progress: Optional[ProgressCallback] = None,
+    output_dir: str = "data/outputs",
+) -> Dict[str, Any]:
+    """JSON → БД (тройки) + исходный документ → эмбеддинги в Qdrant."""
+
+    def progress(stage: str, current: int, total: int, message: Optional[str] = None):
+        if on_progress:
+            on_progress(stage, current, total, message)
+
+    progress("import", 0, 2, "Импорт JSON в SQLite + Neo4j")
+    import_result = await run_import_json_pipeline(
+        json_path,
+        job_id,
+        on_progress=on_progress,
+        output_dir=output_dir,
+        index_chunks=False,
+    )
+
+    meta = import_result.get("document_metadata") or {}
+    source_file = meta.get("source_file") or Path(doc_path).name
+    source_document = Path(source_file).stem
+
+    progress("embeddings", 1, 2, f"Эмбеддинги из {Path(doc_path).name}")
+    embed_result = await run_embeddings_only_pipeline(
+        doc_path,
+        job_id,
+        on_progress=on_progress,
+        source_document=source_document,
+    )
+
+    progress("done", 2, 2, "Пара обработана")
+    return {
+        "job_id": job_id,
+        "mode": "import_pair",
+        "source_document": source_document,
+        "triples_count": import_result.get("triples_count", 0),
+        "chunks_count": embed_result.get("chunks_count", 0),
+        "document_metadata": meta,
+        "neo4j": import_result.get("neo4j"),
+        "qdrant": {
+            "entities": (import_result.get("qdrant") or {}).get("entities", 0),
+            "chunks": (embed_result.get("qdrant") or {}).get("chunks", 0),
+        },
+        "import": import_result,
+        "embeddings": embed_result,
+    }
+
+
+async def run_embeddings_only_pipeline(
+    filepath: str,
+    job_id: str,
+    on_progress: Optional[ProgressCallback] = None,
+    source_document: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Только чанкинг + эмбеддинги в Qdrant (без LLM-извлечения фактов)."""
+
+    def progress(stage: str, current: int, total: int, message: Optional[str] = None):
+        if on_progress:
+            on_progress(stage, current, total, message)
+
+    suffix = Path(filepath).suffix.lower()
+    if suffix not in TEXT_EXTENSIONS:
+        raise ValueError(f"Embeddings-only: unsupported format {suffix}")
+
+    basename = source_document or Path(filepath).stem
+    store = get_store()
+
+    progress("ingest", 0, 1, "Чтение и разбиение документа")
+    markdown = await _read_document(filepath)
+    chunks = _chunk_document(markdown, filepath)
+    doc_kind = detect_document_kind(filepath, markdown)
+
+    from services.document_metadata import enrich_document_metadata
+    from services.glossary import detect_geography
+
+    geo = detect_geography(markdown)
+    document_metadata = enrich_document_metadata(
+        {"source_file": os.path.basename(filepath), "document_kind": doc_kind["kind"]},
+        markdown,
+        doc_kind,
+        geography=geo,
+    )
+
+    store.register_document(
+        job_id,
+        basename,
+        document_kind=document_metadata.get("document_kind"),
+        author=document_metadata.get("author"),
+        year=document_metadata.get("year"),
+        geography=document_metadata.get("geography") or geo,
+        metadata=document_metadata,
+    )
+
+    progress("qdrant", 0, 1, "Индексация чанков в Qdrant")
+    qdrant_stats: Dict[str, Any] = {"chunks": 0}
+    try:
+        indexer = QdrantIndexer()
+        chunk_meta = {
+            "document_kind": document_metadata.get("document_kind"),
+            "year": document_metadata.get("year"),
+            "author": document_metadata.get("author"),
+            "geography": document_metadata.get("geography"),
+        }
+        qdrant_stats["chunks"] = indexer.index_chunks(
+            chunks, job_id, basename, metadata=chunk_meta
+        )
+    except Exception as e:
+        qdrant_stats = {"error": str(e)}
+
+    progress("done", 1, 1, "Готово")
+    return {
+        "job_id": job_id,
+        "mode": "embeddings_only",
+        "source_document": basename,
+        "document_kind": doc_kind,
+        "chunks_count": len(chunks),
+        "qdrant": qdrant_stats,
+    }
+
+
+async def run_full_pipeline(
+    filepath: str,
+    job_id: str,
+    llm_extractor=None,
+    on_progress: Optional[ProgressCallback] = None,
+    output_dir: str = "data/outputs",
+    extractor_backend: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Полный цикл с поддержкой PDF/DOCX/Excel и Yandex/Ollama."""
+
+    def progress(stage: str, current: int, total: int, message: Optional[str] = None):
+        if on_progress:
+            on_progress(stage, current, total, message)
+
+    os.makedirs(output_dir, exist_ok=True)
+    suffix = Path(filepath).suffix.lower()
+
+    progress("route", 0, 1, f"Определение типа файла: {suffix}")
+    doc_kind = detect_document_kind(filepath)
+    chunks: List[Dict[str, Any]] = []
+    markdown = ""
+
+    if suffix in EXCEL_EXTENSIONS:
+        progress("extract", 0, 1, "Извлечение из Excel (Smart Mapper)")
+        triple_dicts, excel_meta = await extract_triples_from_excel(filepath)
+        extraction_backend = "excel_mapper"
+        document_metadata = excel_meta
+    else:
+        if suffix not in TEXT_EXTENSIONS:
+            raise ValueError(f"Unsupported format: {suffix}")
+
+        extractor = llm_extractor or get_text_extractor(extractor_backend)
+        extraction_backend = extractor_backend or os.getenv("EXTRACTOR_BACKEND", "auto")
+        if type(extractor).__name__ == "YandexExtractorAdapter":
+            extraction_backend = "yandex"
+        elif type(extractor).__name__ == "OllamaExtractorAdapter":
+            extraction_backend = "ollama"
+
+        progress("ingest", 0, 1, "Чтение документа")
+        triple_dicts, chunks, markdown = await _extract_from_text_document(
+            filepath, extractor, on_progress
+        )
+        document_metadata = {
+            "source_file": os.path.basename(filepath),
+            "document_kind": doc_kind["kind"],
+            "label": doc_kind["label"],
+        }
+
+    return await _finalize_pipeline(
+        triple_dicts=triple_dicts,
+        chunks=chunks,
+        markdown=markdown,
+        document_metadata=document_metadata,
+        filepath=filepath,
+        job_id=job_id,
+        output_dir=output_dir,
+        on_progress=on_progress,
+        extraction_backend=extraction_backend,
+        index_entities=True,
+        index_chunks=True,
+    )

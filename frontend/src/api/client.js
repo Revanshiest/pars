@@ -7,8 +7,8 @@ function headers(apiKey, token) {
   return h
 }
 
-async function request(path, { apiKey, token, method = 'GET', body, formData } = {}) {
-  const opts = { method, headers: headers(apiKey, token) }
+async function request(path, { apiKey, token, method = 'GET', body, formData, signal } = {}) {
+  const opts = { method, headers: headers(apiKey, token), signal }
   if (formData) {
     opts.body = formData
   } else if (body !== undefined) {
@@ -32,8 +32,9 @@ async function request(path, { apiKey, token, method = 'GET', body, formData } =
 
 export const api = {
   authStatus: () => request('/api/v1/auth/status'),
-  authToken: (api_key) => request('/api/v1/auth/token', { method: 'POST', body: { api_key } }),
-  me: (auth) => request('/api/v1/auth/me', auth),
+  authToken: (api_key, signal) =>
+    request('/api/v1/auth/token', { method: 'POST', body: { api_key }, signal }),
+  me: (auth, signal) => request('/api/v1/auth/me', { ...auth, signal }),
 
   listJobs: (auth, { active, limit = 100, batch_id } = {}) => {
     const q = new URLSearchParams({ limit })
@@ -47,17 +48,41 @@ export const api = {
   getJobChildren: (auth, id) => request(`/api/v1/jobs/${id}/children`, auth),
 
   listFolders: (auth) => request('/api/v1/ingest/folders', auth),
-  ingestFolder: (auth, folder_path, extractor, recursive) =>
+  ingestFolder: (auth, folder_path, extractor, recursive, mode = 'full') =>
     request('/api/v1/documents/ingest-folder', {
       ...auth,
       method: 'POST',
-      body: { folder_path, extractor: extractor || null, recursive },
+      body: { folder_path, extractor: extractor || null, recursive, mode },
     }),
   uploadFile: (auth, file, extractor) => {
     const fd = new FormData()
     fd.append('file', file)
     const q = extractor ? `?extractor=${extractor}` : ''
     return request(`/api/v1/documents/upload${q}`, { ...auth, method: 'POST', formData: fd })
+  },
+  importPair: (auth, document, jsonFile) => {
+    const fd = new FormData()
+    fd.append('document', document)
+    fd.append('json_file', jsonFile)
+    return request('/api/v1/documents/import-pair', { ...auth, method: 'POST', formData: fd })
+  },
+  importPairs: (auth, files) => {
+    const fd = new FormData()
+    for (const file of files) fd.append('files', file)
+    return request('/api/v1/documents/import-pairs', { ...auth, method: 'POST', formData: fd })
+  },
+  uploadFolder: (auth, files, mode = 'full', extractor) => {
+    const fd = new FormData()
+    for (const file of files) fd.append('files', file)
+    fd.append('mode', mode)
+    if (extractor && extractor !== 'auto') fd.append('extractor', extractor)
+    return request('/api/v1/documents/upload-folder', { ...auth, method: 'POST', formData: fd })
+  },
+
+  getGraphView: (auth, { limit = 200, entity_name } = {}) => {
+    const q = new URLSearchParams({ limit })
+    if (entity_name) q.set('entity_name', entity_name)
+    return request(`/api/v1/graph/view?${q}`, auth)
   },
 
   hybridSearch: (auth, query, limit = 10) =>
@@ -68,4 +93,27 @@ export const api = {
     }),
 
   health: () => request('/health'),
+
+  listRoles: (auth) => request('/api/v1/admin/roles', auth),
+  listUsers: (auth) => request('/api/v1/admin/users', auth),
+  createUser: (auth, body) =>
+    request('/api/v1/admin/users', { ...auth, method: 'POST', body }),
+  updateUser: (auth, userId, body) =>
+    request(`/api/v1/admin/users/${userId}`, { ...auth, method: 'PATCH', body }),
+  deleteUser: (auth, userId) =>
+    request(`/api/v1/admin/users/${userId}`, { ...auth, method: 'DELETE' }),
+  rotateUserKey: (auth, userId) =>
+    request(`/api/v1/admin/users/${userId}/rotate-key`, { ...auth, method: 'POST' }),
+
+  listGlossary: (auth, { domain, q } = {}) => {
+    const params = new URLSearchParams()
+    if (domain) params.set('domain', domain)
+    if (q) params.set('q', q)
+    const qs = params.toString()
+    return request(`/api/v1/glossary${qs ? `?${qs}` : ''}`, auth)
+  },
+  createGlossaryTerm: (auth, body) =>
+    request('/api/v1/glossary', { ...auth, method: 'POST', body }),
+  glossaryLookup: (auth, text, top_k = 5) =>
+    request('/api/v1/glossary/lookup', { ...auth, method: 'POST', body: { text, top_k } }),
 }

@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import GlobalJobsPanel from '../jobs/GlobalJobsPanel'
 import { useState } from 'react'
 
 export default function Layout() {
@@ -15,6 +16,7 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      <GlobalJobsPanel />
     </div>
   )
 }

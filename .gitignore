@@ -3,6 +3,12 @@ venv/
 data/
 *.db
 
+# Source documents (класть в data/inbox/, не в репо)
+*.pdf
+*.docx
+*.xlsx
+*.xls
+
 # Python
 __pycache__/
 *.py[cod]

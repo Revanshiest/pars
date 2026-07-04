@@ -219,3 +219,79 @@ class Neo4jLoader:
         if rows:
             return {"entities": rows[0]["entities"], "relationships": rows[0]["relationships"]}
         return {"entities": 0, "relationships": 0}
+
+    def export_graph_view(
+        self,
+        limit: int = 200,
+        center_entity: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Экспорт узлов и рёбер для SVG-визуализации."""
+        limit = max(1, min(limit, 500))
+        nodes_map: Dict[str, Dict[str, str]] = {}
+        edges: List[Dict[str, str]] = []
+        seen_edges: set[tuple[str, str, str]] = set()
+
+        def add_node(nid: str, name: str, ntype: str):
+            if nid and nid not in nodes_map:
+                nodes_map[nid] = {"id": nid, "name": name or nid, "type": ntype or "Concept"}
+
+        def add_edge(src: str, tgt: str, relation: str):
+            if not src or not tgt:
+                return
+            rel = relation or "related_to"
+            key = (src, tgt, rel)
+            if key in seen_edges:
+                return
+            seen_edges.add(key)
+            edges.append({
+                "source": src,
+                "target": tgt,
+                "relation": rel,
+                "label": rel.replace("_", " "),
+            })
+
+        if center_entity:
+            rows = self.query(
+                """
+                MATCH (start:Entity)
+                WHERE toLower(start.name) = toLower($center)
+                   OR toLower(start.name) CONTAINS toLower($center)
+                WITH start LIMIT 1
+                MATCH (start)-[r:REL*0..2]-(n:Entity)
+                WITH collect(DISTINCT n)[..$limit] AS nodeList
+                UNWIND nodeList AS n1
+                OPTIONAL MATCH (n1)-[rel:REL]->(n2:Entity)
+                WHERE n2 IN nodeList
+                RETURN n1.id AS src_id, n1.name AS src_name, n1.type AS src_type,
+                       n2.id AS tgt_id, n2.name AS tgt_name, n2.type AS tgt_type,
+                       rel.type AS relation
+                """,
+                {"center": center_entity, "limit": limit},
+            )
+        else:
+            rows = self.query(
+                """
+                MATCH (n:Entity)
+                WITH n ORDER BY n.name LIMIT $limit
+                WITH collect(n) AS nodeList
+                UNWIND nodeList AS n1
+                OPTIONAL MATCH (n1)-[rel:REL]->(n2:Entity)
+                WHERE n2 IN nodeList
+                RETURN n1.id AS src_id, n1.name AS src_name, n1.type AS src_type,
+                       n2.id AS tgt_id, n2.name AS tgt_name, n2.type AS tgt_type,
+                       rel.type AS relation
+                """,
+                {"limit": limit},
+            )
+
+        for row in rows:
+            add_node(row.get("src_id"), row.get("src_name"), row.get("src_type"))
+            if row.get("tgt_id"):
+                add_node(row.get("tgt_id"), row.get("tgt_name"), row.get("tgt_type"))
+                add_edge(row.get("src_id"), row.get("tgt_id"), row.get("relation"))
+
+        return {
+            "nodes": list(nodes_map.values())[:limit],
+            "edges": edges,
+            "center": center_entity,
+        }

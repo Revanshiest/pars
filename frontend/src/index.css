@@ -29,6 +29,9 @@
            hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-all text-sm;
   }
   .card { @apply bg-white border border-surface-700 rounded-2xl shadow-card; }
+  .card-hover {
+    @apply card hover:shadow-card-hover hover:border-brand-200 transition-all cursor-pointer;
+  }
   .input {
     @apply w-full bg-white border border-surface-700 rounded-xl px-3 py-2
            text-surface-100 placeholder-surface-500 text-sm
@@ -46,3 +49,7 @@
 .log-line-success { @apply text-emerald-600; }
 .log-line-warning { @apply text-amber-600; }
 .log-line-error { @apply text-red-500; }
+
+.accent-glow {
+  box-shadow: 0 0 20px rgba(0, 255, 191, 0.25);
+}

@@ -4,8 +4,9 @@ import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 
 export default function LoginPage() {
-  const { login, error, loading } = useAuth()
+  const { login, error, loading, apiKey, user } = useAuth()
   const [key, setKey] = useState('')
+  const [pending, setPending] = useState(false)
   const [setupRequired, setSetupRequired] = useState(false)
   const navigate = useNavigate()
 
@@ -16,10 +17,22 @@ export default function LoginPage() {
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (pending && !loading && error) setPending(false)
+  }, [pending, loading, error])
+
+  useEffect(() => {
+    if (!pending) return
+    if (!loading && apiKey && user) {
+      navigate('/jobs')
+      setPending(false)
+    }
+  }, [pending, loading, apiKey, user, navigate])
+
   const submit = async (e) => {
     e.preventDefault()
     login(key)
-    navigate('/jobs')
+    setPending(true)
   }
 
   return (
@@ -38,7 +51,7 @@ export default function LoginPage() {
           ) : (
             <p className="text-sm text-surface-400 mt-2">
               Введите API-ключ. Получить его можно в{' '}
-              <a href="/admin/" className="text-brand-600 hover:underline inline-flex items-center gap-0.5">
+              <a href="/admin" className="text-brand-600 hover:underline inline-flex items-center gap-0.5">
                 админ-панели <ExternalLink size={12} />
               </a>
             </p>

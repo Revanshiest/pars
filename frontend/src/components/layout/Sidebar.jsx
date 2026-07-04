@@ -1,11 +1,13 @@
 import { NavLink } from 'react-router-dom'
-import { Upload, Search, ChevronLeft, ChevronRight, Atom, LogOut } from 'lucide-react'
+import { Upload, Search, Network, BookOpen, Shield, ChevronLeft, ChevronRight, Atom, LogOut } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../../context/AuthContext'
 
 const NAV = [
   { to: '/jobs', icon: Upload, label: 'Обработка', desc: 'Папки и задачи' },
   { to: '/search', icon: Search, label: 'Поиск', desc: 'Гибридный поиск' },
+  { to: '/graph', icon: Network, label: 'Граф', desc: 'Визуализация знаний' },
+  { to: '/glossary', icon: BookOpen, label: 'Глоссарий', desc: 'Термины и синонимы' },
 ]
 
 export default function Sidebar({ collapsed, onToggle }) {
@@ -38,7 +40,9 @@ export default function Sidebar({ collapsed, onToggle }) {
       </div>
 
       <nav className="flex-1 py-3 space-y-0.5 px-2">
-        {NAV.map(({ to, icon: Icon, label, desc }) => (
+        {[...NAV, ...(user?.role === 'admin' ? [
+          { to: '/admin', icon: Shield, label: 'Пользователи', desc: 'Управление доступом' },
+        ] : [])].map(({ to, icon: Icon, label, desc }) => (
           <NavLink
             key={to}
             to={to}

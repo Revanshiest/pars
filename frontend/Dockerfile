@@ -1,8 +1,9 @@
+# syntax=docker/dockerfile:1
 # SPA static files (internal; public access via deploy/nginx)
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY frontend/package.json ./
-RUN npm install
+RUN --mount=type=cache,target=/root/.npm npm install
 COPY frontend/ .
 ARG VITE_API_URL=
 ENV VITE_API_URL=$VITE_API_URL

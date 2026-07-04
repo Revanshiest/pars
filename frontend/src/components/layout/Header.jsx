@@ -5,6 +5,9 @@ import { api } from '../../api/client'
 const TITLES = {
   '/jobs': 'Обработка документов',
   '/search': 'Поиск знаний',
+  '/graph': 'Граф знаний',
+  '/glossary': 'Глоссарий',
+  '/admin': 'Управление пользователями',
 }
 
 export default function Header() {
