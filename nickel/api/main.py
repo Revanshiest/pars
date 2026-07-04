@@ -31,6 +31,7 @@ from api.models import (
     SemanticSearchRequest,
     SemanticSearchResponse,
 )
+from api.routers.glossary import router as glossary_router
 from api.routers.platform import router as platform_router
 from agent.search_agent import KnowledgeAgent
 from ontology.schema import NODE_TYPES, RELATIONS
@@ -127,6 +128,7 @@ app.add_middleware(
 )
 
 app.include_router(platform_router)
+app.include_router(glossary_router)
 
 ADMIN_STATIC = Path(__file__).resolve().parent / "static" / "admin"
 if ADMIN_STATIC.is_dir():
