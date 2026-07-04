@@ -167,6 +167,10 @@ def build_graph_view(
             "practice_origin": props.get("practice_origin"),
             "confidence": conf,
             "geography": f.get("geography"),
+            "verification_status": f.get("verification_status"),
+            "document_kind": props.get("document_kind"),
+            "doi": f.get("doi") or props.get("doi"),
+            "version": f.get("version"),
         })
 
     node_list = []

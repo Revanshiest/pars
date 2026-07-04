@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Search, ZoomIn, ZoomOut, Maximize2, X, RotateCcw,
-  Loader2, Network, Plus, GitBranch, Filter,
+  Loader2, Network, Plus, GitBranch, Filter, Pencil, Trash2, History,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../context/AuthContext'
@@ -50,6 +50,11 @@ export default function GraphPage() {
     subject: '', subject_type: 'Material', relation: 'related_to',
     object: '', object_type: 'Process', comment: '',
   })
+  const [edgeEdit, setEdgeEdit] = useState(null)
+  const [edgeEditComment, setEdgeEditComment] = useState('')
+  const [factVersions, setFactVersions] = useState([])
+  const [graphEdits, setGraphEdits] = useState([])
+  const [showHistory, setShowHistory] = useState(false)
 
   useEffect(() => {
     api.getOntology(auth).then(data => {
@@ -184,6 +189,81 @@ export default function GraphPage() {
       setShowAdd(false)
       setTriple({ subject: '', subject_type: 'Material', relation: 'related_to', object: '', object_type: 'Process', comment: '' })
       await reloadGraph()
+      if (showHistory) loadEditHistory()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setAddBusy(false)
+    }
+  }
+
+  const loadEditHistory = useCallback(async () => {
+    if (!canEdit) return
+    try {
+      const rows = await api.listGraphEdits(auth, 30)
+      setGraphEdits(Array.isArray(rows) ? rows : [])
+    } catch {
+      setGraphEdits([])
+    }
+  }, [auth, canEdit])
+
+  useEffect(() => {
+    if (showHistory && canEdit) loadEditHistory()
+  }, [showHistory, canEdit, loadEditHistory])
+
+  useEffect(() => {
+    const fid = selectedEdge?.fact_id
+    if (!fid) {
+      setFactVersions([])
+      setEdgeEdit(null)
+      return
+    }
+    setEdgeEdit({
+      subject: selectedEdge.source_name || '',
+      object: selectedEdge.target_name || '',
+      relation: edgeRelation(selectedEdge),
+      description: selectedEdge.description || '',
+    })
+    api.getFactVersions(auth, fid)
+      .then(data => setFactVersions(data?.versions || []))
+      .catch(() => setFactVersions([]))
+  }, [selectedEdge, auth])
+
+  const saveEdgeEdit = async () => {
+    const fid = selectedEdge?.fact_id
+    if (!fid || !edgeEdit) return
+    setAddBusy(true)
+    setError('')
+    try {
+      await api.updateTriple(auth, fid, {
+        subject: edgeEdit.subject,
+        object: edgeEdit.object,
+        relation: edgeEdit.relation,
+        properties: edgeEdit.description ? { description: edgeEdit.description } : undefined,
+        comment: edgeEditComment,
+      })
+      setEdgeEditComment('')
+      setSelectedEdge(null)
+      await reloadGraph()
+      if (showHistory) loadEditHistory()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setAddBusy(false)
+    }
+  }
+
+  const removeEdge = async () => {
+    const fid = selectedEdge?.fact_id
+    if (!fid || !window.confirm('Отметить связь как отклонённую (удалить из графа)?')) return
+    setAddBusy(true)
+    setError('')
+    try {
+      await api.deleteTriple(auth, fid, edgeEditComment || 'удалено экспертом')
+      setEdgeEditComment('')
+      setSelectedEdge(null)
+      await reloadGraph()
+      if (showHistory) loadEditHistory()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -313,6 +393,18 @@ export default function GraphPage() {
                 </option>
               ))}
             </select>
+            {relationTypesInGraph.includes('contradicts') && (
+              <button
+                type="button"
+                className={clsx(
+                  'btn-secondary w-full text-xs mt-1',
+                  relationFilter === 'contradicts' && 'border-red-300 text-red-600',
+                )}
+                onClick={() => setRelationFilter(relationFilter === 'contradicts' ? '' : 'contradicts')}
+              >
+                Противоречия
+              </button>
+            )}
           </div>
           <button type="button" onClick={() => canvasRef.current?.stabilize()} className="btn-secondary w-full text-xs">
             <RotateCcw size={11} /> Перезапустить физику
@@ -380,10 +472,25 @@ export default function GraphPage() {
         )}
 
         {canEdit && (
-          <div className="card p-3">
-            <button type="button" className="btn-secondary w-full text-xs mb-2" onClick={() => setShowAdd(v => !v)}>
+          <div className="card p-3 space-y-2">
+            <button type="button" className="btn-secondary w-full text-xs" onClick={() => setShowAdd(v => !v)}>
               <Plus size={11} /> {showAdd ? 'Скрыть' : 'Добавить связь'}
             </button>
+            <button type="button" className="btn-ghost w-full text-xs" onClick={() => setShowHistory(v => !v)}>
+              <History size={11} /> {showHistory ? 'Скрыть историю' : 'История правок'}
+            </button>
+            {showHistory && (
+              <div className="max-h-40 overflow-y-auto space-y-1 text-[10px]">
+                {graphEdits.length === 0 && <p className="text-surface-500 px-1">Правок пока нет</p>}
+                {graphEdits.map(ed => (
+                  <div key={ed.id} className="border border-surface-800 rounded-lg p-2">
+                    <span className="font-semibold text-brand-600">{ed.action}</span>
+                    {ed.comment && <p className="text-surface-400 mt-0.5">{ed.comment}</p>}
+                    <p className="text-surface-500 mt-0.5">{ed.created_at?.slice(0, 16)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
             {showAdd && (
               <form onSubmit={submitTriple} className="space-y-2">
                 <input className="input text-xs py-1.5" placeholder="Субъект" required value={triple.subject}
@@ -531,6 +638,46 @@ export default function GraphPage() {
                   Выбрать узел →
                 </button>
               </div>
+
+              {canEdit && selectedEdge.fact_id && edgeEdit && (
+                <div className="border-t border-surface-700 pt-4 space-y-2">
+                  <p className="label flex items-center gap-1"><Pencil size={11} /> Правка связи</p>
+                  <input className="input text-xs py-1.5" value={edgeEdit.subject}
+                    onChange={e => setEdgeEdit(v => ({ ...v, subject: e.target.value }))} />
+                  <select className="input text-xs py-1.5" value={edgeEdit.relation}
+                    onChange={e => setEdgeEdit(v => ({ ...v, relation: e.target.value }))}>
+                    {Object.keys(relationMeta).map(r => (
+                      <option key={r} value={r}>{relationMeta[r]?.label_ru || r}</option>
+                    ))}
+                  </select>
+                  <input className="input text-xs py-1.5" value={edgeEdit.object}
+                    onChange={e => setEdgeEdit(v => ({ ...v, object: e.target.value }))} />
+                  <input className="input text-xs py-1.5" placeholder="Описание / комментарий к правке"
+                    value={edgeEditComment} onChange={e => setEdgeEditComment(e.target.value)} />
+                  <div className="flex gap-2">
+                    <button type="button" className="btn-primary flex-1 text-xs" disabled={addBusy} onClick={saveEdgeEdit}>
+                      {addBusy ? <Loader2 size={12} className="animate-spin-slow" /> : 'Сохранить'}
+                    </button>
+                    <button type="button" className="btn-ghost text-xs text-red-500" disabled={addBusy} onClick={removeEdge}>
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {factVersions.length > 0 && (
+                <div className="border-t border-surface-700 pt-3">
+                  <p className="label mb-2">История версий ({factVersions.length})</p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto text-[10px]">
+                    {factVersions.map(v => (
+                      <div key={v.id || v.version} className="text-surface-400 border border-surface-800 rounded p-2">
+                        v{v.version} · {v.created_at?.slice(0, 16) || '—'}
+                        {v.change_reason && <span> · {v.change_reason}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

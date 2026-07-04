@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.auth import check_permission, get_current_user
@@ -37,4 +37,13 @@ async def subscribe(body: SubscriptionCreate, user=Depends(get_current_user)):
 
 @router.get("/subscriptions")
 async def list_subs(user=Depends(get_current_user)):
+    check_permission(user, "subscribe")
     return get_store().list_subscriptions(user["id"])
+
+
+@router.delete("/subscriptions/{subscription_id}")
+async def remove_sub(subscription_id: str, user=Depends(get_current_user)):
+    check_permission(user, "subscribe")
+    if not get_store().remove_subscription(subscription_id, user["id"]):
+        raise HTTPException(404, "Subscription not found")
+    return {"deleted": subscription_id}

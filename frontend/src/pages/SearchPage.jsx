@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../api/client'
+import { SourceMetaBadges } from '../components/SourceMeta'
 
 const FALLBACK_STARTERS = [
   'Какие методы обессоливания воды подходят при сульфатах ≤300 мг/л?',
@@ -14,8 +15,9 @@ const FALLBACK_STARTERS = [
 function SourceChip({ item }) {
   const value = item.value || item.raw?.properties?.value
   const answer = item.answer || item.description || item.snippet
-  const src = item.metadata?.source_document || item.raw?.source_document
+  const src = item.metadata?.source_document || item.raw?.source_document || item.provenance?.source_document
   const entity = item.raw?.subject || item.title?.split(' —[')[0]
+  const page = item.provenance?.source_page || item.raw?.source_page
 
   return (
     <div className="rounded-xl border border-surface-700 bg-surface-900/50 p-3 text-xs">
@@ -24,8 +26,9 @@ function SourceChip({ item }) {
       {answer && answer !== value && (
         <p className="text-surface-400 mt-1 line-clamp-2">{answer}</p>
       )}
+      <SourceMetaBadges item={item} />
       <div className="flex items-center gap-2 mt-2 flex-wrap">
-        {src && <span className="text-[10px] text-surface-500">{src}</span>}
+        {src && <span className="text-[10px] text-surface-500">{src}{page ? `, стр. ${page}` : ''}</span>}
         {entity && (
           <Link
             to={`/graph?entity=${encodeURIComponent(entity)}`}

@@ -81,6 +81,16 @@ export const api = {
 
   addTriple: (auth, body) =>
     request('/api/v1/graph/triples', { ...auth, method: 'POST', body }),
+  updateTriple: (auth, factId, body) =>
+    request(`/api/v1/graph/triples/${encodeURIComponent(factId)}`, { ...auth, method: 'PATCH', body }),
+  deleteTriple: (auth, factId, comment = '') => {
+    const q = comment ? `?comment=${encodeURIComponent(comment)}` : ''
+    return request(`/api/v1/graph/triples/${encodeURIComponent(factId)}${q}`, { ...auth, method: 'DELETE' })
+  },
+  listGraphEdits: (auth, limit = 50) =>
+    request(`/api/v1/graph/edits?limit=${limit}`, auth),
+  getFactVersions: (auth, factId) =>
+    request(`/api/v1/facts/${encodeURIComponent(factId)}/versions`, auth),
   syncGraph: (auth) =>
     request('/api/v1/graph/sync', { ...auth, method: 'POST' }),
 
@@ -145,8 +155,14 @@ export const api = {
       body: { technologies, parameters },
     }),
 
+  recommendations: (auth, topic) =>
+    request(`/api/v1/analytics/recommendations?topic=${encodeURIComponent(topic)}`, auth),
+
   exportReport: (auth, topic, format) =>
     request('/api/v1/export', { ...auth, method: 'POST', body: { topic, format } }),
+
+  downloadExportUrl: (topic, format) =>
+    `${API_BASE}/api/v1/export/${encodeURIComponent(topic)}/download?format=${encodeURIComponent(format)}`,
 
   verificationQueue: (auth, { limit = 50, unassigned_only } = {}) => {
     const q = new URLSearchParams({ limit })
@@ -198,6 +214,12 @@ export const api = {
     request(`/api/v1/notifications?unread_only=${unreadOnly}`, auth),
   markNotificationRead: (auth, id) =>
     request(`/api/v1/notifications/${id}/read`, { ...auth, method: 'POST' }),
+
+  listSubscriptions: (auth) => request('/api/v1/subscriptions', auth),
+  subscribe: (auth, topic, filters = {}) =>
+    request('/api/v1/subscriptions', { ...auth, method: 'POST', body: { topic, filters } }),
+  unsubscribe: (auth, subscriptionId) =>
+    request(`/api/v1/subscriptions/${subscriptionId}`, { ...auth, method: 'DELETE' }),
 
   listAuditLog: (auth, { limit = 100 } = {}) =>
     request(`/api/v1/audit?limit=${limit}`, auth),

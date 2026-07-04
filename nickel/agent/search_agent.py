@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from agent.tools import SearchTools
 from services.analytics import find_knowledge_gaps, generate_recommendations, generate_literature_review
 from services.fact_format import format_fact_answer, fact_display_fields
+from services.verification import enrich_fact
 
 
 SYSTEM_PROMPT = """Ты — эксперт-аналитик R&D в горно-металлургической отрасли.
@@ -127,6 +128,22 @@ class KnowledgeAgent:
             item.setdefault("answer", display["answer"])
             item.setdefault("value", display["value"])
             item.setdefault("description", display["description"])
+        if isinstance(raw, dict) and raw.get("subject"):
+            try:
+                enriched = enrich_fact(raw)
+                item["credibility"] = enriched.get("credibility")
+                item["provenance"] = enriched.get("provenance")
+                meta = dict(item.get("metadata") or {})
+                prov = enriched.get("provenance") or {}
+                meta.setdefault("geography", enriched.get("geography") or raw.get("geography"))
+                meta.setdefault("verification_status", enriched.get("verification_status") or raw.get("verification_status"))
+                meta.setdefault("source_document", prov.get("source_document") or raw.get("source_document"))
+                meta.setdefault("document_kind", prov.get("document_kind"))
+                meta.setdefault("doi", prov.get("doi"))
+                meta.setdefault("year", prov.get("year"))
+                item["metadata"] = meta
+            except Exception:
+                pass
         return item
 
     def _synthesize(self, question: str, tool_results: List[Dict]) -> str:

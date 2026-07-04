@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   BarChart3, Loader2, BookOpen, GitCompare, Download, AlertTriangle, Sparkles, RefreshCw,
+  Users, Globe2,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../context/AuthContext'
@@ -22,6 +23,8 @@ export default function AnalyticsPage() {
   const [gapPresets, setGapPresets] = useState([])
   const [review, setReview] = useState(null)
   const [compare, setCompare] = useState(null)
+  const [practices, setPractices] = useState(null)
+  const [recs, setRecs] = useState(null)
   const [exportMsg, setExportMsg] = useState('')
 
   useEffect(() => {
@@ -66,7 +69,9 @@ export default function AnalyticsPage() {
     setLoading(true)
     setError('')
     try {
-      setReview(await api.literatureReview(auth, topic, { use_llm: true }))
+      const data = await api.literatureReview(auth, topic, { use_llm: true })
+      setReview(data)
+      api.recommendations(auth, topic).then(setRecs).catch(() => {})
     } catch (e) {
       setError(e.message)
     } finally {
@@ -88,11 +93,52 @@ export default function AnalyticsPage() {
     }
   }
 
+  const runPractices = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      setPractices(await api.comparePractices(auth, topic))
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const runRecommendations = async (e) => {
+    e?.preventDefault?.()
+    setLoading(true)
+    setError('')
+    try {
+      setRecs(await api.recommendations(auth, topic))
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const doExport = async (format) => {
     setExportMsg('')
     try {
-      const res = await api.exportReport(auth, topic, format)
-      setExportMsg(format === 'pdf' ? 'PDF-отчёт готов к скачиванию' : format === 'jsonld' ? 'Файл JSON-LD сформирован' : 'Markdown-отчёт готов')
+      await api.exportReport(auth, topic, format)
+      const url = api.downloadExportUrl(topic, format)
+      const res = await fetch(url, {
+        headers: {
+          ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+          ...(auth.apiKey ? { 'X-API-Key': auth.apiKey } : {}),
+        },
+      })
+      if (!res.ok) throw new Error('Не удалось скачать файл')
+      const blob = await res.blob()
+      const ext = format === 'jsonld' ? 'jsonld' : format
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `${topic.slice(0, 40).replace(/[^\w\-]+/g, '_')}.${ext}`
+      a.click()
+      URL.revokeObjectURL(a.href)
+      setExportMsg(`Файл .${ext} скачан`)
     } catch (e) {
       setError(e.message)
     }
@@ -104,6 +150,8 @@ export default function AnalyticsPage() {
         {[
           CAN_DASHBOARD.has(user?.role) && ['dashboard', BarChart3, 'Дашборд'],
           ['gaps', AlertTriangle, 'Пробелы'],
+          ['recs', Users, 'Рекомендации'],
+          ['practices', Globe2, 'RU vs мир'],
           CAN_SYNTHESIS.has(user?.role) && ['review', BookOpen, 'Литобзор'],
           ['compare', GitCompare, 'Сравнение'],
           CAN_EXPORT.has(user?.role) && ['export', Download, 'Экспорт'],
@@ -236,6 +284,104 @@ export default function AnalyticsPage() {
         </div>
       )}
 
+      {tab === 'recs' && (
+        <form onSubmit={runRecommendations} className="card p-4 flex gap-3">
+          <input className="input flex-1" value={topic} onChange={e => setTopic(e.target.value)}
+            placeholder="Тема: электроэкстракция никеля…" />
+          <button type="submit" className="btn-primary shrink-0" disabled={loading}>
+            {loading ? <Loader2 size={14} className="animate-spin-slow" /> : 'Найти'}
+          </button>
+        </form>
+      )}
+
+      {recs && tab === 'recs' && (
+        <div className="card p-5 space-y-4">
+          {recs.experts?.length > 0 ? (
+            <div>
+              <h4 className="text-xs font-bold text-surface-400 mb-2">Эксперты и команды</h4>
+              <div className="space-y-2">
+                {recs.experts.slice(0, 8).map((ex, i) => (
+                  <div key={i} className="text-sm flex justify-between gap-2 border-b border-surface-800 pb-2">
+                    <span className="font-medium">{ex.name}</span>
+                    <span className="text-xs text-surface-400">{ex.context || ex.source}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-surface-400">Явных экспертов в графе по теме не найдено</p>
+          )}
+          {recs.similar_cases?.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold text-surface-400 mb-2">Похожие кейсы</h4>
+              {recs.similar_cases.slice(0, 6).map((c, i) => (
+                <p key={i} className="text-sm">{c.subject} → {c.object}</p>
+              ))}
+            </div>
+          )}
+          {recs.suggested_actions?.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold text-surface-400 mb-2">Действия</h4>
+              <ul className="text-sm space-y-1 list-disc pl-4 text-surface-300">
+                {recs.suggested_actions.map((a, i) => <li key={i}>{a}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'practices' && (
+        <form onSubmit={runPractices} className="card p-4 flex gap-3">
+          <input className="input flex-1" value={topic} onChange={e => setTopic(e.target.value)}
+            placeholder="Тема для сравнения практик…" />
+          <button type="submit" className="btn-primary shrink-0" disabled={loading}>
+            {loading ? <Loader2 size={14} className="animate-spin-slow" /> : 'Сравнить'}
+          </button>
+        </form>
+      )}
+
+      {practices?.comparison && tab === 'practices' && (
+        <div className="card p-5 space-y-4">
+          {practices.comparison?.summary && (
+            <p className="text-sm text-surface-200 whitespace-pre-wrap">{practices.comparison.summary}</p>
+          )}
+          <div className="grid sm:grid-cols-2 gap-4">
+            {practices.domestic && (
+              <div className="rounded-xl border border-surface-800 p-4">
+                <h4 className="text-xs font-bold text-brand-600 mb-2">{practices.domestic.label || 'RU'}</h4>
+                <p className="text-sm">Фактов: {practices.domestic.verified_facts?.length ?? 0}</p>
+                <ul className="text-xs mt-2 space-y-1 text-surface-400 max-h-40 overflow-y-auto">
+                  {(practices.domestic.verified_facts || []).slice(0, 5).map((f, i) => (
+                    <li key={i}>{f.subject} → {f.object}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {practices.global && (
+              <div className="rounded-xl border border-surface-800 p-4">
+                <h4 className="text-xs font-bold text-brand-600 mb-2">{practices.global.label || 'Global'}</h4>
+                <p className="text-sm">Фактов: {practices.global.verified_facts?.length ?? 0}</p>
+                <ul className="text-xs mt-2 space-y-1 text-surface-400 max-h-40 overflow-y-auto">
+                  {(practices.global.verified_facts || []).slice(0, 5).map((f, i) => (
+                    <li key={i}>{f.subject} → {f.object}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          {practices.comparison?.ru_only_topics?.length > 0 && (
+            <p className="text-xs text-surface-400">
+              Только RU: {practices.comparison.ru_only_topics.slice(0, 6).join(', ')}
+            </p>
+          )}
+          {practices.comparison?.global_only_topics?.length > 0 && (
+            <p className="text-xs text-surface-400">
+              Только global: {practices.comparison.global_only_topics.slice(0, 6).join(', ')}
+            </p>
+          )}
+        </div>
+      )}
+
       {tab === 'review' && CAN_SYNTHESIS.has(user?.role) && (
         <form onSubmit={runReview} className="card p-4 flex gap-3">
           <input className="input flex-1" value={topic} onChange={e => setTopic(e.target.value)}
@@ -276,6 +422,14 @@ export default function AnalyticsPage() {
               <h4 className="text-xs font-bold text-amber-600 mb-2">Разногласия</h4>
               {review.disagreements.slice(0, 5).map((f, i) => (
                 <p key={i} className="text-sm">{f.subject} — расходится с — {f.object}</p>
+              ))}
+            </div>
+          )}
+          {recs?.experts?.length > 0 && tab === 'review' && (
+            <div>
+              <h4 className="text-xs font-bold text-surface-400 mb-2">Эксперты по теме</h4>
+              {recs.experts.slice(0, 5).map((ex, i) => (
+                <p key={i} className="text-sm">{ex.name} — {ex.context || ex.source}</p>
               ))}
             </div>
           )}

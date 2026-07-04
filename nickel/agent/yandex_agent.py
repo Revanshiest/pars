@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from agent.tool_registry import catalog_for_prompt, select_tools
 from agent.tools import SearchTools
 from services.fact_format import fact_display_fields, format_fact_answer
+from services.verification import enrich_fact
 from services.logging_config import get_logger
 from services.user_messages import Msg
 from services.yandex_llm import yandex_complete
@@ -215,6 +216,22 @@ class YandexKnowledgeAgent:
                     raw = item.get("raw") or item
                     d = fact_display_fields(raw)
                     item = {**item, "answer": d["answer"], "value": d["value"], "title": d["title"]}
+                    if isinstance(raw, dict) and raw.get("subject"):
+                        try:
+                            enriched = enrich_fact(raw)
+                            item["credibility"] = enriched.get("credibility")
+                            item["provenance"] = enriched.get("provenance")
+                            meta = dict(item.get("metadata") or {})
+                            prov = enriched.get("provenance") or {}
+                            meta.setdefault("geography", enriched.get("geography") or raw.get("geography"))
+                            meta.setdefault("verification_status", enriched.get("verification_status") or raw.get("verification_status"))
+                            meta.setdefault("source_document", prov.get("source_document") or raw.get("source_document"))
+                            meta.setdefault("document_kind", prov.get("document_kind"))
+                            meta.setdefault("doi", prov.get("doi"))
+                            meta.setdefault("year", prov.get("year"))
+                            item["metadata"] = meta
+                        except Exception:
+                            pass
                 ranked.append(item)
             for e in data.get("edges", []):
                 ranked.append({

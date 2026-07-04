@@ -86,6 +86,14 @@ class NotificationsMixin:
                 result.append(d)
             return result
 
+    def remove_subscription(self, subscription_id: str, user_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE subscriptions SET active=0 WHERE id=? AND user_id=? AND active=1",
+                (subscription_id, user_id),
+            )
+            return cur.rowcount > 0
+
     def notify_subscribers(self, topic_keywords: List[str], title: str, body: str):
         with self._connect() as conn:
             subs = conn.execute("SELECT * FROM subscriptions WHERE active=1").fetchall()

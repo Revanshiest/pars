@@ -81,6 +81,10 @@ export function edgeDetailItems(edge) {
   }
   if (edge.geography) items.push({ label: 'География', value: edge.geography })
   if (edge.source_document) items.push({ label: 'Документ', value: edge.source_document })
+  if (edge.verification_status) items.push({ label: 'Верификация', value: edge.verification_status })
+  if (edge.document_kind) items.push({ label: 'Тип источника', value: edge.document_kind })
+  if (edge.doi) items.push({ label: 'DOI', value: edge.doi })
+  if (edge.version != null) items.push({ label: 'Версия', value: String(edge.version) })
   return items
 }
 
