@@ -101,6 +101,13 @@ export const api = {
       body: { query, limit: 15, ...extra },
     }),
 
+  agentSearch: (auth, question, { max_iterations = 5 } = {}) =>
+    request('/api/v1/search/agent', {
+      ...auth,
+      method: 'POST',
+      body: { question, max_iterations },
+    }),
+
   dashboard: (auth) => request('/api/v1/dashboard', auth),
 
   knowledgeGaps: (auth, params = {}) => {

@@ -7,7 +7,7 @@ import clsx from 'clsx'
 import { useAuth } from '../../context/AuthContext'
 
 const NAV = [
-  { to: '/search', icon: Search, label: 'Поиск', desc: 'Запросы и фильтры' },
+  { to: '/search', icon: Search, label: 'Поиск', desc: 'Чат-ассистент' },
   { to: '/graph', icon: Network, label: 'Граф', desc: 'Карта знаний R&D' },
   { to: '/analytics', icon: BarChart3, label: 'Аналитика', desc: 'Пробелы, обзоры' },
   { to: '/glossary', icon: BookOpen, label: 'Глоссарий', desc: 'RU/EN термины' },

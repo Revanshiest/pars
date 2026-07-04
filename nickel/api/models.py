@@ -66,7 +66,7 @@ class GraphQueryRequest(BaseModel):
 
 
 class AgentQueryRequest(BaseModel):
-    question: str = Field(..., min_length=5)
+    question: str = Field(..., min_length=2)
     max_iterations: int = Field(default=5, ge=1, le=10)
 
 
@@ -77,6 +77,8 @@ class AgentQueryResponse(BaseModel):
     tool_calls: List[Dict[str, Any]]
     ranked_results: Optional[List[Dict[str, Any]]] = None
     pipeline: Optional[str] = None
+    confidence: Optional[float] = None
+    llm_synthesized: Optional[bool] = None
 
 
 class GraphViewResponse(BaseModel):

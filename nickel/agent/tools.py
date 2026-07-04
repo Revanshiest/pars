@@ -107,6 +107,7 @@ class SearchTools:
             author=args.get("author"),
             min_confidence=args.get("min_confidence"),
             verification_status=args.get("verification_status"),
+            role=args.get("role"),
         )
         return {
             "results": result.get("ranked_results", []),

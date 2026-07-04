@@ -461,16 +461,21 @@ async def graph_search(req: GraphQueryRequest, user=Depends(get_current_user)):
 async def agent_search(req: AgentQueryRequest, user=Depends(get_current_user)):
     check_permission(user, "search")
     audit_action(user, "search.agent", details={"question": req.question})
+    from services.search_runtime import run_search
+
+    role = user.get("role")
     use_llm = os.getenv("AGENT_USE_LLM", "false").lower() == "true"
     if use_llm:
-        result = await search_agent.query_with_llm(req.question)
+        result = await search_agent.query_with_llm(req.question, role=role)
     else:
-        result = search_agent.query(req.question, max_iterations=req.max_iterations)
-    return AgentQueryResponse(
-        **result,
-        ranked_results=result.get("ranked_results"),
-        pipeline=result.get("pipeline"),
-    )
+        result = await run_search(
+            search_agent.query,
+            req.question,
+            req.max_iterations,
+            role,
+        )
+    result = apply_search_acl(user, result)
+    return AgentQueryResponse(**result)
 
 
 @app.get("/api/v1/graph/stats")

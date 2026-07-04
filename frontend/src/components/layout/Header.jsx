@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { api } from '../../api/client'
 
 const TITLES = {
-  '/search': 'Поиск знаний',
+  '/search': 'Ассистент',
   '/graph': 'Граф знаний R&D',
   '/glossary': 'Глоссарий отрасли',
   '/jobs': 'Импорт документов',

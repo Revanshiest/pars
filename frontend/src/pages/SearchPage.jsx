@@ -1,244 +1,240 @@
-import { useState } from 'react'
-import { Search, Loader2, Globe, Hash, Filter } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Bot, Loader2, Send, Sparkles, User, ChevronDown, ChevronUp } from 'lucide-react'
 import clsx from 'clsx'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../api/client'
-import ResultCard from '../components/search/ResultCard'
 
-const EXAMPLE_QUERIES = [
-  'обессоливание воды сульфаты хлориды Ca Mg Na',
-  'циркуляция католита электроэкстракция никеля',
-  'распределение Au Ag МПГ штейн шлак',
-  'закачка шахтных вод глубокие горизонты',
-  'кучное выщелачивание холодный климат никель',
+const STARTERS = [
+  'Какой содержание Cu в руде Cerro Verde?',
+  'Какая годовая переработка руды на Cerro Verde?',
+  'Что такое flash smelting?',
+  'Сравни отечественную и мировую практику электроэкстракции меди',
+  'Какие свойства есть у меди?',
 ]
 
-const DOC_KINDS = [
-  { value: '', label: 'Все типы' },
-  { value: 'publication', label: 'Публикация' },
-  { value: 'patent', label: 'Патент' },
-  { value: 'report', label: 'Отчёт' },
-  { value: 'regulation', label: 'Норматив' },
-  { value: 'experiment_catalog', label: 'Каталог экспериментов' },
-]
+function SourceChip({ item }) {
+  const value = item.value || item.raw?.properties?.value
+  const answer = item.answer || item.description || item.snippet
+  const src = item.metadata?.source_document || item.raw?.source_document
+  const entity = item.raw?.subject || item.title?.split(' —[')[0]
 
-const GEO_OPTIONS = [
-  { value: '', label: 'Вся география' },
-  { value: 'RU', label: 'Россия / СНГ' },
-  { value: 'EN', label: 'Зарубежная практика' },
-  { value: 'global', label: 'Мировая' },
-]
+  return (
+    <div className="rounded-xl border border-surface-700 bg-surface-900/50 p-3 text-xs">
+      <p className="font-semibold text-surface-200 leading-snug">{item.title}</p>
+      {value && <p className="text-brand-600 font-bold mt-1">{value}</p>}
+      {answer && answer !== value && (
+        <p className="text-surface-400 mt-1 line-clamp-2">{answer}</p>
+      )}
+      <div className="flex items-center gap-2 mt-2 flex-wrap">
+        {src && <span className="text-[10px] text-surface-500">{src}</span>}
+        {entity && (
+          <Link
+            to={`/graph?entity=${encodeURIComponent(entity)}`}
+            className="text-[10px] text-brand-600 hover:underline"
+          >
+            Граф →
+          </Link>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AssistantMessage({ msg }) {
+  const [showSources, setShowSources] = useState(false)
+  const sources = msg.sources || []
+
+  return (
+    <div className="flex gap-3 max-w-3xl">
+      <div className="w-8 h-8 rounded-xl bg-brand-100 border border-brand-200 flex items-center justify-center shrink-0">
+        <Bot size={16} className="text-brand-600" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="card p-4">
+          <p className="text-sm text-surface-100 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+          {msg.confidence != null && (
+            <p className="text-[10px] text-surface-400 mt-3">
+              Уверенность ~{Math.round(msg.confidence * 100)}%
+              {msg.llm_synthesized ? ' · LLM' : ' · база знаний'}
+            </p>
+          )}
+        </div>
+        {sources.length > 0 && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setShowSources(v => !v)}
+              className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium"
+            >
+              {showSources ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              Источники ({sources.length})
+            </button>
+            {showSources && (
+              <div className="mt-2 space-y-2">
+                {sources.slice(0, 8).map((s, i) => (
+                  <SourceChip key={`${s.id || s.title}-${i}`} item={s} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function UserMessage({ content }) {
+  return (
+    <div className="flex gap-3 max-w-3xl ml-auto flex-row-reverse">
+      <div className="w-8 h-8 rounded-xl bg-surface-800 border border-surface-700 flex items-center justify-center shrink-0">
+        <User size={16} className="text-surface-300" />
+      </div>
+      <div className="card p-4 bg-brand-50 border-brand-100">
+        <p className="text-sm text-surface-100 leading-relaxed">{content}</p>
+      </div>
+    </div>
+  )
+}
 
 export default function SearchPage() {
   const { auth } = useAuth()
-  const [mode, setMode] = useState('semantic')
-  const [query, setQuery] = useState('')
-  const [filters, setFilters] = useState({
-    geography: '',
-    document_kind: '',
-    year_from: '',
-    year_to: '',
-    min_confidence: '',
-    verification_status: '',
-  })
+  const [input, setInput] = useState('')
+  const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
-  const [results, setResults] = useState(null)
   const [error, setError] = useState('')
+  const bottomRef = useRef(null)
+  const inputRef = useRef(null)
 
-  const buildFilterBody = () => {
-    const body = { query, limit: 25 }
-    if (filters.geography) body.geography = filters.geography
-    if (filters.document_kind) body.document_kind = filters.document_kind
-    if (filters.year_from) body.year_from = Number(filters.year_from)
-    if (filters.year_to) body.year_to = Number(filters.year_to)
-    if (filters.min_confidence) body.min_confidence = Number(filters.min_confidence)
-    if (filters.verification_status) body.verification_status = filters.verification_status
-    return body
-  }
+  const scrollDown = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
 
-  const search = async (e) => {
-    e?.preventDefault()
-    if (query.length < 2) return
-    setLoading(true)
+  useEffect(() => {
+    scrollDown()
+  }, [messages, loading, scrollDown])
+
+  const send = async (text) => {
+    const question = (text ?? input).trim()
+    if (question.length < 2 || loading) return
+
+    setInput('')
     setError('')
-    setResults(null)
+    setMessages(prev => [...prev, { role: 'user', content: question }])
+    setLoading(true)
+
     try {
-      let data
-      if (mode === 'numeric') {
-        data = await api.numericSearch(auth, query, {
-          geography: filters.geography || undefined,
-          verification_status: filters.verification_status || undefined,
-        })
-      } else if (mode === 'compare') {
-        data = await api.comparePractices(auth, query, buildFilterBody())
-      } else {
-        data = await api.filteredSearch(auth, buildFilterBody())
-      }
-      setResults(data)
+      const data = await api.agentSearch(auth, question)
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: data.answer,
+        sources: data.sources || data.ranked_results || [],
+        confidence: data.confidence,
+        llm_synthesized: data.llm_synthesized,
+      }])
     } catch (err) {
       setError(err.message)
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `Не удалось получить ответ: ${err.message}`,
+        sources: [],
+      }])
     } finally {
       setLoading(false)
+      inputRef.current?.focus()
     }
   }
 
-  const ranked = results?.ranked_results
-    || results?.results?.map(f => {
-      const props = f.properties || f.matched_constraint || {}
-      const value = props.value
-      const desc = props.description
-      const answer = value
-        ? (desc && desc !== value ? `${value} — ${desc}` : String(value))
-        : (desc || `${f.subject} ${f.relation} ${f.object}`)
-      return {
-        result_type: 'fact',
-        id: f.id,
-        title: `${f.subject} —[${f.relation}]→ ${f.object}`,
-        snippet: answer,
-        answer,
-        value,
-        description: desc,
-        score: f.confidence,
-        metadata: {
-          geography: f.geography,
-          verification_status: f.verification_status,
-          source_document: f.source_document,
-          year: props.year,
-        },
-        raw: f,
-      }
-    })
-    || []
+  const onSubmit = (e) => {
+    e.preventDefault()
+    send()
+  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-5">
-      <div className="card p-4 space-y-4">
-        <div className="flex flex-wrap gap-2">
-          {[
-            ['semantic', Filter, 'Семантический'],
-            ['numeric', Hash, 'Числовой'],
-            ['compare', Globe, 'RU vs мир'],
-          ].map(([id, Icon, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setMode(id)}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border',
-                mode === id ? 'bg-brand-600 text-white border-brand-600' : 'border-surface-700 text-surface-300',
-              )}
-            >
-              <Icon size={13} /> {label}
-            </button>
-          ))}
-        </div>
+    <div className="flex flex-col mx-auto max-w-4xl" style={{ height: 'calc(100vh - 8rem)' }}>
+      {/* Header */}
+      <div className="shrink-0 mb-4">
+        <h2 className="text-lg font-bold text-surface-100 flex items-center gap-2">
+          <Sparkles size={20} className="text-brand-600" />
+          Ассистент базы знаний
+        </h2>
+        <p className="text-xs text-surface-400 mt-1">
+          Задайте вопрос — ассистент найдёт факты в базе и сформулирует ответ
+        </p>
+      </div>
 
-        <form onSubmit={search} className="flex gap-3">
-          <input
-            className="input flex-1"
-            placeholder={
-              mode === 'numeric'
-                ? 'сульфаты < 200 мг/л, сухой остаток ≤ 1000 мг/дм³'
-                : 'Материал + процесс + условия + география…'
-            }
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-          />
-          <button type="submit" className="btn-primary shrink-0" disabled={loading}>
-            {loading ? <Loader2 size={16} className="animate-spin-slow" /> : <Search size={16} />}
-            Искать
-          </button>
-        </form>
-
-        {mode !== 'compare' && (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <select className="input text-xs py-2" value={filters.geography}
-              onChange={e => setFilters(f => ({ ...f, geography: e.target.value }))}>
-              {GEO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <select className="input text-xs py-2" value={filters.document_kind}
-              onChange={e => setFilters(f => ({ ...f, document_kind: e.target.value }))}>
-              {DOC_KINDS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <select className="input text-xs py-2" value={filters.verification_status}
-              onChange={e => setFilters(f => ({ ...f, verification_status: e.target.value }))}>
-              <option value="">Любой статус</option>
-              <option value="verified">verified</option>
-              <option value="pending">pending</option>
-              <option value="rejected">rejected</option>
-            </select>
-            <input className="input text-xs py-2" type="number" placeholder="Год от"
-              value={filters.year_from} onChange={e => setFilters(f => ({ ...f, year_from: e.target.value }))} />
-            <input className="input text-xs py-2" type="number" placeholder="Год до"
-              value={filters.year_to} onChange={e => setFilters(f => ({ ...f, year_to: e.target.value }))} />
-            <input className="input text-xs py-2" type="number" step="0.1" min="0" max="1" placeholder="Мин. confidence"
-              value={filters.min_confidence} onChange={e => setFilters(f => ({ ...f, min_confidence: e.target.value }))} />
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto space-y-4 pr-1 min-h-0">
+        {messages.length === 0 && !loading && (
+          <div className="card p-6 text-center">
+            <Bot size={32} className="mx-auto text-brand-400 mb-3" />
+            <p className="text-sm text-surface-300 mb-4">
+              Спросите о процессах, материалах, предприятиях или параметрах из загруженных документов
+            </p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {STARTERS.map(q => (
+                <button
+                  key={q}
+                  type="button"
+                  className="badge bg-brand-50 text-brand-700 border border-brand-100 cursor-pointer hover:bg-brand-100 text-left"
+                  onClick={() => send(q)}
+                >
+                  {q.length > 48 ? q.slice(0, 47) + '…' : q}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2">
-          {EXAMPLE_QUERIES.map(q => (
-            <button key={q} type="button" className="badge bg-brand-50 text-brand-700 border border-brand-100 cursor-pointer hover:bg-brand-100"
-              onClick={() => { setQuery(q); setMode('semantic') }}>
-              {q.slice(0, 42)}{q.length > 42 ? '…' : ''}
-            </button>
-          ))}
-        </div>
+        {messages.map((msg, i) => (
+          msg.role === 'user'
+            ? <UserMessage key={i} content={msg.content} />
+            : <AssistantMessage key={i} msg={msg} />
+        ))}
+
+        {loading && (
+          <div className="flex gap-3 max-w-3xl">
+            <div className="w-8 h-8 rounded-xl bg-brand-100 border border-brand-200 flex items-center justify-center shrink-0">
+              <Bot size={16} className="text-brand-600" />
+            </div>
+            <div className="card p-4 flex items-center gap-2 text-sm text-surface-400">
+              <Loader2 size={16} className="animate-spin-slow text-brand-600" />
+              Ищу в базе знаний…
+            </div>
+          </div>
+        )}
+
+        {error && messages.length > 0 && (
+          <p className="text-xs text-red-500 text-center">{error}</p>
+        )}
+
+        <div ref={bottomRef} />
       </div>
 
-      {error && <div className="card p-4 text-red-500 text-sm">{error}</div>}
-
-      {results && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <p className="text-sm text-surface-400">
-              {mode === 'compare' && results.comparison
-                ? `RU: ${results.domestic?.verified_facts?.length ?? 0} · Global: ${results.global?.verified_facts?.length ?? 0}`
-                : `Найдено: ${ranked.length} результатов`}
-              {results.pipeline && <span className="ml-2 badge bg-surface-900">{results.pipeline}</span>}
-            </p>
-            {results.parsed && (
-              <p className="text-xs text-surface-400 font-mono">{JSON.stringify(results.parsed)}</p>
-            )}
-          </div>
-
-          {mode === 'compare' && results.domestic && (
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="card p-4">
-                <h4 className="text-sm font-bold text-surface-100 mb-2">Отечественная практика (RU)</h4>
-                <div className="space-y-2">
-                  {(results.domestic.ranked_results || []).slice(0, 8).map((r, i) => (
-                    <ResultCard key={`ru-${i}`} item={r} />
-                  ))}
-                </div>
-              </div>
-              <div className="card p-4">
-                <h4 className="text-sm font-bold text-surface-100 mb-2">Мировая практика</h4>
-                <div className="space-y-2">
-                  {(results.global?.ranked_results || []).slice(0, 8).map((r, i) => (
-                    <ResultCard key={`gl-${i}`} item={r} />
-                  ))}
-                </div>
-              </div>
-              {results.comparison?.shared_topics?.length > 0 && (
-                <div className="md:col-span-2 card p-3 text-xs text-surface-400">
-                  Общие темы: {results.comparison.shared_topics.slice(0, 8).join(', ')}
-                </div>
-              )}
-            </div>
+      {/* Input */}
+      <form onSubmit={onSubmit} className="shrink-0 mt-4 card p-3 flex gap-2 items-end">
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              send()
+            }
+          }}
+          placeholder="Ваш вопрос… (Enter — отправить, Shift+Enter — новая строка)"
+          rows={1}
+          className={clsx(
+            'input flex-1 resize-none min-h-[44px] max-h-32 py-3',
+            loading && 'opacity-60',
           )}
-
-          {mode !== 'compare' && ranked.length === 0 && (
-            <div className="card p-6 text-center text-surface-400 text-sm">
-              Ничего не найдено. Загрузите отчёты/JSON или уточните фильтры.
-            </div>
-          )}
-
-          {mode !== 'compare' && ranked.slice(0, 25).map((r, i) => (
-            <ResultCard key={`${r.result_type}-${r.id}-${i}`} item={r} />
-          ))}
-        </div>
-      )}
+          disabled={loading}
+        />
+        <button type="submit" className="btn-primary shrink-0 h-[44px]" disabled={loading || input.trim().length < 2}>
+          {loading ? <Loader2 size={16} className="animate-spin-slow" /> : <Send size={16} />}
+        </button>
+      </form>
     </div>
   )
 }
