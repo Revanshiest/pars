@@ -6,7 +6,7 @@ import re
 from typing import List, Optional
 from dotenv import load_dotenv
 from docx import Document
-from excel_mapper import process_excel_file
+from services.excel_mapper import process_excel_file
 
 # Загрузка переменных окружения из .env
 load_dotenv()

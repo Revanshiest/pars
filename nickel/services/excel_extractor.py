@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 
-from excel_mapper import ExcelSmartMapper
+from services.excel_mapper import ExcelSmartMapper
 from ontology.schema import filter_valid_triples
 
 
