@@ -3,11 +3,13 @@ import { useLocation } from 'react-router-dom'
 import { api } from '../../api/client'
 
 const TITLES = {
-  '/jobs': 'Обработка документов',
   '/search': 'Поиск знаний',
-  '/graph': 'Граф знаний',
-  '/glossary': 'Глоссарий',
-  '/admin': 'Управление пользователями',
+  '/graph': 'Граф знаний R&D',
+  '/glossary': 'Глоссарий отрасли',
+  '/jobs': 'Импорт документов',
+  '/analytics': 'Аналитика и синтез',
+  '/verification': 'Верификация знаний',
+  '/admin': 'Управление доступом',
 }
 
 export default function Header() {
@@ -27,7 +29,7 @@ export default function Header() {
   return (
     <header className="h-14 shrink-0 border-b border-surface-700 bg-white px-6 flex items-center justify-between">
       <h1 className="text-base font-bold text-surface-100">
-        {TITLES[pathname] || 'Nickel Knowledge Map'}
+        {TITLES[pathname] || 'НОРНИК R&D Knowledge Map'}
       </h1>
       <div className="flex items-center gap-2 text-xs text-surface-400">
         <span className={ok ? 'w-2 h-2 rounded-full bg-accent-400 animate-pulse' : 'w-2 h-2 rounded-full bg-red-400'} />

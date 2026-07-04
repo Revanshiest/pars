@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from services.glossary import expand_query_with_glossary, glossary_use_bge
 from services.language_detect import detect_query_language, merge_search_results
 from services.neo4j_loader import Neo4jLoader
-from services.qdrant_index import QdrantIndexer
 from services.store import get_store
 
 SOURCE_WEIGHTS = {
@@ -17,6 +17,14 @@ SOURCE_WEIGHTS = {
     "graph_edge": 0.68,
 }
 GRAPH_BOOST = 0.12
+
+
+def search_use_vectors() -> bool:
+    return os.getenv("SEARCH_USE_VECTORS", "false").lower() in ("1", "true", "yes")
+
+
+def search_use_graph_boost() -> bool:
+    return os.getenv("SEARCH_USE_GRAPH", "false").lower() in ("1", "true", "yes")
 
 
 def _result_key(item: Dict[str, Any]) -> Tuple[str, str]:
@@ -62,23 +70,27 @@ def hybrid_ranked_search(
     chunks: List[Dict[str, Any]] = []
     entities: List[Dict[str, Any]] = []
 
-    try:
-        indexer = QdrantIndexer()
-        chunks = indexer.search_chunks(
-            expanded, limit=search_limit, job_id=job_id, metadata_filters=meta_filters
-        )
-        if lang in ("en", "mixed"):
-            extra = indexer.search_chunks(
-                query, limit=search_limit, job_id=job_id, metadata_filters=meta_filters
-            )
-            chunks = merge_search_results(chunks, extra, key_fn=lambda x: x.get("chunk_id"), limit=search_limit)
+    if search_use_vectors():
+        try:
+            from services.qdrant_index import QdrantIndexer
 
-        entities = indexer.search_entities(expanded, entity_type=entity_type, limit=search_limit)
-        if lang in ("en", "mixed"):
-            extra_e = indexer.search_entities(query, entity_type=entity_type, limit=search_limit)
-            entities = merge_search_results(entities, extra_e, key_fn=lambda x: x.get("name"), limit=search_limit)
-    except Exception:
-        pass
+            indexer = QdrantIndexer()
+            chunks = indexer.search_chunks(
+                expanded, limit=search_limit, job_id=job_id, metadata_filters=meta_filters
+            )
+            if lang in ("en", "mixed"):
+                extra = indexer.search_chunks(
+                    query, limit=search_limit, job_id=job_id, metadata_filters=meta_filters
+                )
+                chunks = merge_search_results(chunks, extra, key_fn=lambda x: x.get("chunk_id"), limit=search_limit)
+
+            entities = indexer.search_entities(expanded, entity_type=entity_type, limit=search_limit)
+            if lang in ("en", "mixed"):
+                extra_e = indexer.search_entities(query, entity_type=entity_type, limit=search_limit)
+                entities = merge_search_results(entities, extra_e, key_fn=lambda x: x.get("name"), limit=search_limit)
+        except Exception:
+            pass
+
     facts = store.list_facts(
         status=verification_status,
         geography=geography,
@@ -158,33 +170,34 @@ def hybrid_ranked_search(
         }
 
     try:
-        with Neo4jLoader() as loader:
-            for entity in entities[:graph_entity_limit]:
-                name = entity.get("name")
-                if not name:
-                    continue
-                neighbors = loader.search_neighbors(name, depth=graph_depth)
-                entity_score = float(entity.get("score", 0.5))
-                for row in neighbors:
-                    eid = _graph_edge_id(row)
-                    key = _result_key({"result_type": "graph_edge", "id": eid})
-                    edge_score = entity_score * SOURCE_WEIGHTS["graph_edge"]
-                    if key in ranked:
-                        ranked[key]["score"] += GRAPH_BOOST
-                        if "graph" not in ranked[key]["sources"]:
-                            ranked[key]["sources"].append("graph")
-                    else:
-                        ranked[key] = {
-                            "result_type": "graph_edge",
-                            "id": eid,
-                            "score": edge_score,
-                            "title": f"{row.get('source', '?')} → {row.get('target', '?')}",
-                            "snippet": f"relation: {row.get('relation', row.get('target_type', 'REL'))}",
-                            "metadata": row,
-                            "sources": ["graph"],
-                            "raw": row,
-                        }
-                    entity_names_in_graph.add(name)
+        if search_use_graph_boost() and entities:
+            with Neo4jLoader() as loader:
+                for entity in entities[:graph_entity_limit]:
+                    name = entity.get("name")
+                    if not name:
+                        continue
+                    neighbors = loader.search_neighbors(name, depth=graph_depth)
+                    entity_score = float(entity.get("score", 0.5))
+                    for row in neighbors:
+                        eid = _graph_edge_id(row)
+                        key = _result_key({"result_type": "graph_edge", "id": eid})
+                        edge_score = entity_score * SOURCE_WEIGHTS["graph_edge"]
+                        if key in ranked:
+                            ranked[key]["score"] += GRAPH_BOOST
+                            if "graph" not in ranked[key]["sources"]:
+                                ranked[key]["sources"].append("graph")
+                        else:
+                            ranked[key] = {
+                                "result_type": "graph_edge",
+                                "id": eid,
+                                "score": edge_score,
+                                "title": f"{row.get('source', '?')} → {row.get('target', '?')}",
+                                "snippet": f"relation: {row.get('relation', row.get('target_type', 'REL'))}",
+                                "metadata": row,
+                                "sources": ["graph"],
+                                "raw": row,
+                            }
+                        entity_names_in_graph.add(name)
     except Exception:
         pass
 
@@ -201,7 +214,7 @@ def hybrid_ranked_search(
         "expanded_query": expanded if expanded != query else None,
         "detected_language": lang,
         "glossary_matches": glossary.get("matched_terms", []),
-        "pipeline": "hybrid_vector_graph",
+        "pipeline": "sqlite_text" if not search_use_vectors() else "hybrid_vector_graph",
         "filters_applied": {
             "entity_type": entity_type,
             "geography": geography,

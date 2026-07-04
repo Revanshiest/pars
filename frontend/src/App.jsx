@@ -5,6 +5,8 @@ import IngestPage from './pages/IngestPage'
 import SearchPage from './pages/SearchPage'
 import GraphPage from './pages/GraphPage'
 import GlossaryPage from './pages/GlossaryPage'
+import AnalyticsPage from './pages/AnalyticsPage'
+import VerificationPage from './pages/VerificationPage'
 import AdminPage from './pages/AdminPage'
 import { useAuth } from './context/AuthContext'
 import { JobsProvider } from './context/JobsContext'
@@ -63,11 +65,13 @@ export default function App() {
             </RequireAuth>
           }
         >
-          <Route index element={<Navigate to="/jobs" replace />} />
+          <Route index element={<Navigate to="/search" replace />} />
           <Route path="jobs" element={<IngestPage />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="graph" element={<GraphPage />} />
           <Route path="glossary" element={<GlossaryPage />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="verification" element={<VerificationPage />} />
           <Route
             path="admin"
             element={

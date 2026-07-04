@@ -166,14 +166,12 @@ async def run_full_pipeline(
                 "document_metadata": {"source_file": os.path.basename(filepath)},
             }
         triple_dicts, document_metadata = load_triples_json(payload)
-        extraction_backend = "json_import"
-        markdown = json.dumps(document_metadata, ensure_ascii=False)
-        doc_kind = detect_document_kind(filepath, markdown)
-        if document_metadata.get("document_kind"):
-            doc_kind = {
-                "kind": document_metadata["document_kind"],
-                "label": document_metadata.get("label", document_metadata["document_kind"]),
-            }
+        progress("import", 0, 1, "Быстрый импорт JSON (без BGE)")
+        from services.json_graph_import import import_triples_json_file
+
+        result = import_triples_json_file(filepath, job_id)
+        progress("done", 1, 1, f"Импортировано {result.get('triples_count', 0)} triples")
+        return result
     else:
         if suffix not in TEXT_EXTENSIONS:
             raise ValueError(f"Unsupported format: {suffix}")

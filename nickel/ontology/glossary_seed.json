@@ -22,5 +22,12 @@
   {"canonical": "скорость потока", "synonyms_ru": ["расход", "скорость циркуляции"], "synonyms_en": ["flow rate", "flow velocity", "circulation rate"], "domain": "Parameter", "definition": "Скорость потока электролита/реагента"},
   {"canonical": "концентрация", "synonyms_ru": ["содержание", "уровень"], "synonyms_en": ["concentration", "content", "level"], "domain": "Parameter", "definition": "Количественная характеристика состава"},
   {"canonical": "диафрагменная ячейка", "synonyms_ru": ["диафрагменный электролизёр"], "synonyms_en": ["diaphragm cell"], "domain": "Equipment", "definition": "Электролизёр с диафрагмой"},
-  {"canonical": "New Caledonia", "synonyms_ru": ["Новая Кaledония", "НК"], "synonyms_en": ["NC", "Nouvelle-Calédonie"], "domain": "Geography", "definition": "Регион добычи никеля"}
+  {"canonical": "New Caledonia", "synonyms_ru": ["Новая Кaledония", "НК"], "synonyms_en": ["NC", "Nouvelle-Calédonie"], "domain": "Geography", "definition": "Регион добычи никеля"},
+  {"canonical": "золото", "synonyms_ru": ["Au", "Au (Gold)"], "synonyms_en": ["gold", "Au"], "domain": "Material", "definition": "Благородный металл Au"},
+  {"canonical": "серебро", "synonyms_ru": ["Ag", "Ag (Silver)"], "synonyms_en": ["silver", "Ag"], "domain": "Material", "definition": "Благородный металл Ag"},
+  {"canonical": "диоксид серы", "synonyms_ru": ["SO2", "SO₂"], "synonyms_en": ["sulfur dioxide", "SO2"], "domain": "Material", "definition": "Газ SO₂, продукт сгорания"},
+  {"canonical": "техногенный гипс", "synonyms_ru": ["синтетический ангидрит", "CaSO4"], "synonyms_en": ["synthetic gypsum", "FGD gypsum"], "domain": "Material", "definition": "Побочный продукт очистки газов"},
+  {"canonical": "ванна электроэкстракции", "synonyms_ru": ["электролизная ванна"], "synonyms_en": ["electrowinning cell", "EW cell"], "domain": "Equipment", "definition": "Оборудование для электроосаждения металла"},
+  {"canonical": "эксперимент", "synonyms_ru": ["опыт", "протокол"], "synonyms_en": ["experiment", "trial"], "domain": "Experiment", "definition": "Лабораторный или промышленный опыт"},
+  {"canonical": "публикация", "synonyms_ru": ["статья", "отчёт"], "synonyms_en": ["publication", "paper", "report"], "domain": "Publication", "definition": "Научная или техническая публикация"}
 ]

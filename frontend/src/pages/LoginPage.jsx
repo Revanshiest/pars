@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { KeyRound, ExternalLink } from 'lucide-react'
+import { KeyRound } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 
@@ -24,7 +24,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (!pending) return
     if (!loading && apiKey && user) {
-      navigate('/jobs')
+      navigate('/search')
       setPending(false)
     }
   }, [pending, loading, apiKey, user, navigate])
@@ -43,19 +43,11 @@ export default function LoginPage() {
             style={{ background: 'linear-gradient(135deg, #5302e0 60%, #00ffbf 100%)' }}>
             <KeyRound size={24} className="text-white" />
           </div>
-          <h1 className="text-xl font-bold text-surface-100">Nickel Knowledge Map</h1>
-          {setupRequired ? (
-            <p className="text-sm text-amber-600 mt-3 font-medium">
-              Задайте AUTH_ADMIN в .env и перезапустите API. Затем войдите ключом admin.
-            </p>
-          ) : (
-            <p className="text-sm text-surface-400 mt-2">
-              Введите API-ключ. Получить его можно в{' '}
-              <a href="/admin" className="text-brand-600 hover:underline inline-flex items-center gap-0.5">
-                админ-панели <ExternalLink size={12} />
-              </a>
-            </p>
-          )}
+          <h1 className="text-xl font-bold text-surface-100">НОРНИК R&D Knowledge Map</h1>
+          <p className="text-sm text-surface-400 mt-2">
+            Единая карта знаний горно-металлургических исследований: публикации, эксперименты,
+            технологии, материалы, эксперты.
+          </p>
         </div>
 
         {setupRequired && (

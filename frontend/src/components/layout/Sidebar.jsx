@@ -1,14 +1,20 @@
 import { NavLink } from 'react-router-dom'
-import { Upload, Search, Network, BookOpen, Shield, ChevronLeft, ChevronRight, Atom, LogOut } from 'lucide-react'
+import {
+  Upload, Search, Network, BookOpen, Shield, ChevronLeft, ChevronRight,
+  Atom, LogOut, BarChart3, ClipboardCheck,
+} from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../../context/AuthContext'
 
 const NAV = [
-  { to: '/jobs', icon: Upload, label: 'Обработка', desc: 'Папки и задачи' },
-  { to: '/search', icon: Search, label: 'Поиск', desc: 'Гибридный поиск' },
-  { to: '/graph', icon: Network, label: 'Граф', desc: 'Визуализация знаний' },
-  { to: '/glossary', icon: BookOpen, label: 'Глоссарий', desc: 'Термины и синонимы' },
+  { to: '/search', icon: Search, label: 'Поиск', desc: 'Запросы и фильтры' },
+  { to: '/graph', icon: Network, label: 'Граф', desc: 'Карта знаний R&D' },
+  { to: '/analytics', icon: BarChart3, label: 'Аналитика', desc: 'Пробелы, обзоры' },
+  { to: '/glossary', icon: BookOpen, label: 'Глоссарий', desc: 'RU/EN термины' },
+  { to: '/jobs', icon: Upload, label: 'Импорт', desc: 'Отчёты и JSON' },
 ]
+
+const VERIFY_ROLES = new Set(['analyst', 'project_manager', 'admin'])
 
 export default function Sidebar({ collapsed, onToggle }) {
   const { user, logout } = useAuth()
@@ -17,6 +23,16 @@ export default function Sidebar({ collapsed, onToggle }) {
     .slice(0, 2)
     .map(s => s[0]?.toUpperCase())
     .join('')
+
+  const items = [
+    ...NAV,
+    ...(VERIFY_ROLES.has(user?.role)
+      ? [{ to: '/verification', icon: ClipboardCheck, label: 'Верификация', desc: 'Проверка фактов' }]
+      : []),
+    ...(user?.role === 'admin'
+      ? [{ to: '/admin', icon: Shield, label: 'Пользователи', desc: 'RBAC и доступ' }]
+      : []),
+  ]
 
   return (
     <aside className={clsx(
@@ -33,16 +49,14 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
         {!collapsed && (
           <div>
-            <div className="text-sm font-black text-surface-100 leading-none">Nickel</div>
+            <div className="text-sm font-black text-surface-100 leading-none">НОРНИК</div>
             <div className="text-[10px] text-surface-400 mt-0.5">R&D Knowledge Map</div>
           </div>
         )}
       </div>
 
       <nav className="flex-1 py-3 space-y-0.5 px-2">
-        {[...NAV, ...(user?.role === 'admin' ? [
-          { to: '/admin', icon: Shield, label: 'Пользователи', desc: 'Управление доступом' },
-        ] : [])].map(({ to, icon: Icon, label, desc }) => (
+        {items.map(({ to, icon: Icon, label, desc }) => (
           <NavLink
             key={to}
             to={to}

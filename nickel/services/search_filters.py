@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set
 
-from services.glossary import expand_query_with_glossary
+from services.glossary import expand_query_with_glossary, glossary_use_bge
 from services.hybrid_search import hybrid_ranked_search
 from services.language_detect import detect_query_language
 from services.numeric_parser import parse_numeric_query
@@ -50,7 +50,7 @@ def filtered_search(
         from services.store import get_store
 
         lang = detect_query_language(query)
-        glossary_expansion = expand_query_with_glossary(query, use_bge=True)
+        glossary_expansion = expand_query_with_glossary(query, use_bge=glossary_use_bge())
         expanded = glossary_expansion["expanded"]
         indexer = QdrantIndexer()
         meta = {

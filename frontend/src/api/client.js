@@ -76,12 +76,78 @@ export const api = {
     return request(`/api/v1/graph/html?${q}`, { ...auth, responseType: 'text' })
   },
 
+  filteredSearch: (auth, body) =>
+    request('/api/v1/search/filtered', { ...auth, method: 'POST', body }),
+
   hybridSearch: (auth, query, limit = 20) =>
     request('/api/v1/search/hybrid', {
       ...auth,
       method: 'POST',
       body: { query, limit },
     }),
+
+  numericSearch: (auth, query, { limit = 50, geography, verification_status } = {}) =>
+    request('/api/v1/search/numeric', {
+      ...auth,
+      method: 'POST',
+      body: { query, limit, geography, verification_status },
+    }),
+
+  comparePractices: (auth, query, extra = {}) =>
+    request('/api/v1/search/compare-practices', {
+      ...auth,
+      method: 'POST',
+      body: { query, limit: 15, ...extra },
+    }),
+
+  dashboard: (auth) => request('/api/v1/dashboard', auth),
+
+  knowledgeGaps: (auth, params = {}) => {
+    const q = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => { if (v) q.set(k, v) })
+    return request(`/api/v1/analytics/gaps?${q}`, auth)
+  },
+
+  ontologyGaps: (auth, body) =>
+    request('/api/v1/analytics/gaps/ontology', { ...auth, method: 'POST', body }),
+
+  literatureReview: (auth, topic, { geography, min_confidence, use_llm } = {}) =>
+    request('/api/v1/synthesis/literature-review', {
+      ...auth,
+      method: 'POST',
+      body: { topic, geography, min_confidence, use_llm },
+    }),
+
+  compareTechnologies: (auth, technologies, parameters) =>
+    request('/api/v1/analytics/compare', {
+      ...auth,
+      method: 'POST',
+      body: { technologies, parameters },
+    }),
+
+  exportReport: (auth, topic, format) =>
+    request('/api/v1/export', { ...auth, method: 'POST', body: { topic, format } }),
+
+  verificationQueue: (auth, { limit = 50, unassigned_only } = {}) => {
+    const q = new URLSearchParams({ limit })
+    if (unassigned_only) q.set('unassigned_only', 'true')
+    return request(`/api/v1/verification/queue?${q}`, auth)
+  },
+
+  myVerificationQueue: (auth, limit = 20) =>
+    request(`/api/v1/verification/my-queue?limit=${limit}`, auth),
+
+  verifyFact: (auth, factId, status, notes = '') =>
+    request(`/api/v1/facts/${factId}/verify`, {
+      ...auth,
+      method: 'POST',
+      body: { status, notes },
+    }),
+
+  claimVerificationTasks: (auth, limit = 5) =>
+    request('/api/v1/verification/claim', { ...auth, method: 'POST', body: { limit } }),
+
+  getOntology: () => request('/api/v1/ontology'),
 
   health: () => request('/health'),
 

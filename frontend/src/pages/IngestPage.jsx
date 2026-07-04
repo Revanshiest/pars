@@ -320,6 +320,10 @@ export default function IngestPage() {
               {uploading ? 'Загрузка…' : 'Загрузить файлы'}
             </p>
             <p className="text-xs text-surface-400 mt-1">PDF, DOCX, MD, TXT, XLSX, JSON (triples или глоссарий)</p>
+            <p className="text-xs text-surface-400 mt-2 max-w-md mx-auto">
+              JSON-граф: объект с массивом <code className="font-mono bg-surface-900 px-1 rounded">triples</code>.
+              Импорт быстрый, без LLM.
+            </p>
           </div>
         </>
       )}
