@@ -31,6 +31,7 @@ from api.models import (
     SemanticSearchRequest,
     SemanticSearchResponse,
 )
+from api.routers.analytics import router as analytics_router
 from api.routers.glossary import router as glossary_router
 from api.routers.platform import router as platform_router
 from api.routers.search import router as search_router
@@ -133,6 +134,7 @@ app.include_router(platform_router)
 app.include_router(glossary_router)
 app.include_router(search_router)
 app.include_router(verification_router)
+app.include_router(analytics_router)
 
 ADMIN_STATIC = Path(__file__).resolve().parent / "static" / "admin"
 if ADMIN_STATIC.is_dir():
