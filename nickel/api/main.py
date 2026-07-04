@@ -31,13 +31,13 @@ from api.models import (
     SemanticSearchRequest,
     SemanticSearchResponse,
 )
+from api.routers.admin import router as admin_router
 from api.routers.analytics import router as analytics_router
 from api.routers.auth import router as auth_router
 from api.routers.export import router as export_router
 from api.routers.glossary import router as glossary_router
 from api.routers.graph import router as graph_router
 from api.routers.notifications import router as notifications_router
-from api.routers.platform import router as platform_router
 from api.routers.search import router as search_router
 from api.routers.verification import router as verification_router
 from agent.search_agent import KnowledgeAgent
@@ -134,7 +134,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(platform_router)
 app.include_router(glossary_router)
 app.include_router(search_router)
 app.include_router(verification_router)
@@ -143,6 +142,7 @@ app.include_router(export_router)
 app.include_router(graph_router)
 app.include_router(notifications_router)
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 ADMIN_STATIC = Path(__file__).resolve().parent / "static" / "admin"
 if ADMIN_STATIC.is_dir():

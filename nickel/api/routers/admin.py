@@ -1,25 +1,13 @@
-"""API: глоссарий, верификация, аналитика, экспорт, RBAC, уведомления, правка графа."""
+"""API-роутер: администрирование — аудит, доступ к документам, управление пользователями/ролями."""
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from api.auth import apply_search_acl, audit_action, assert_fact_access, check_permission, get_current_user
-from services.analytics import (
-    compare_technologies,
-    find_knowledge_gaps,
-    generate_literature_review,
-    generate_recommendations,
-)
-from services.export_service import export_jsonld, export_markdown, export_pdf, save_export
-from services.graph_editor import add_triple, delete_triple, list_edits, update_triple
-from services.search_filters import compare_practices, filtered_search
-from services.search_runtime import run_search
+from api.auth import audit_action, check_permission, get_current_user
 from services.auth_bootstrap import assignable_roles, env_admin_spec, is_env_admin_email
 from services.store import ROLE_PERMISSIONS, get_store
 
