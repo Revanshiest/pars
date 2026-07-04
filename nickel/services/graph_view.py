@@ -2,11 +2,33 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List, Optional
 
 from services.glossary import normalize_entity
 from services.neo4j_loader import Neo4jLoader
 from services.store import get_store
+
+
+def _json_safe(value: Any) -> Any:
+    """Убрать NaN/Inf — FastAPI json.dumps(allow_nan=False) иначе падает с 500."""
+    if value is None:
+        return None
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return value
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+def _safe_props(props: Any) -> Dict[str, Any]:
+    if not isinstance(props, dict):
+        return {}
+    return _json_safe(props) or {}
 
 # При слиянии дубликатов по имени — приоритет типа для цвета узла
 TYPE_PRIORITY: Dict[str, int] = {
@@ -70,11 +92,11 @@ def build_graph_view(
     facts: List[Dict[str, Any]],
     *,
     entity_name: Optional[str] = None,
-    limit: int = 300,
+    limit: int = 0,
     glossary_index: Optional[Dict[str, str]] = None,
     neighbor_edge_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """nodes + edges для GraphPage (SVG) или PyVis."""
+    """nodes + edges для GraphPage. limit=0 — без ограничения числа фактов."""
     glossary_index = glossary_index or get_store().build_glossary_index()
     pool = list(facts)
 
@@ -108,7 +130,8 @@ def build_graph_view(
                 or normalize_entity(f["object"], index=glossary_index).lower() in canonical_names
             ]
     else:
-        pool = pool[: max(limit, 1)]
+        if limit > 0:
+            pool = pool[: max(limit, 1)]
 
     nodes: Dict[str, Dict[str, Any]] = {}
     edges: List[Dict[str, Any]] = []
@@ -122,12 +145,27 @@ def build_graph_view(
         oid = _resolve_entity(obj, ot, glossary_index, nodes)
         if sid == oid:
             continue
+        rel = f.get("relation") or "related_to"
+        props = _safe_props(f.get("properties"))
+        conf = f.get("confidence")
+        if isinstance(conf, float) and (math.isnan(conf) or math.isinf(conf)):
+            conf = None
         edges.append({
             "source": sid,
             "target": oid,
-            "label": f.get("relation") or "related_to",
+            "label": rel,
+            "relation": rel,
             "fact_id": f.get("id"),
+            "id": f.get("id") or f"{sid}:{rel}:{oid}",
             "source_document": f.get("source_document"),
+            "source_name": nodes[sid]["name"],
+            "target_name": nodes[oid]["name"],
+            "source_type": nodes[sid]["type"],
+            "target_type": nodes[oid]["type"],
+            "description": props.get("description") or "",
+            "practice_origin": props.get("practice_origin"),
+            "confidence": conf,
+            "geography": f.get("geography"),
         })
 
     node_list = []
@@ -257,11 +295,26 @@ def load_graph_view(
     *,
     entity_name: Optional[str] = None,
     source_document: Optional[str] = None,
-    limit: int = 300,
+    limit: int = 0,
     role: Optional[str] = None,
+    full: bool = False,
 ) -> Dict[str, Any]:
     store = get_store()
-    fetch_limit = min(max(limit * 20, limit), 15000) if entity_name else min(max(limit * 3, limit), 15000)
+    documents = _document_counts(store)
+
+    if not entity_name and not source_document and not full:
+        return _json_safe({
+            "nodes": [],
+            "edges": [],
+            "documents": documents,
+            "stats": {
+                "nodes": 0,
+                "edges": 0,
+                "hint": "select_document_or_entity",
+            },
+        })
+
+    fetch_limit: Optional[int] = None if limit == 0 else min(max(limit * 20, limit), 15000)
     facts = store.list_facts(
         source_document=source_document,
         query=entity_name,
@@ -302,8 +355,8 @@ def load_graph_view(
         limit=limit,
     )
     view["source_document"] = source_document
-    view["documents"] = _document_counts(store)
-    return view
+    view["documents"] = documents
+    return _json_safe(view)
 
 
 def _document_counts(store) -> List[Dict[str, Any]]:

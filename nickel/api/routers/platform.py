@@ -450,7 +450,8 @@ async def download_export(topic: str, format: str = "md", user=Depends(get_curre
 
 @router.get("/graph/view")
 async def graph_view(
-    limit: int = 150,
+    limit: int = 0,
+    full: bool = False,
     entity_name: Optional[str] = None,
     source_document: Optional[str] = None,
     user=Depends(get_current_user),
@@ -459,12 +460,13 @@ async def graph_view(
     check_permission(user, "read")
     from services.graph_view import load_graph_view
 
-    audit_action(user, "graph.view", details={"entity": entity_name, "source": source_document})
+    audit_action(user, "graph.view", details={"entity": entity_name, "source": source_document, "full": full})
     return load_graph_view(
         entity_name=entity_name,
         source_document=source_document,
-        limit=min(max(limit, 1), 2000),
+        limit=limit if limit > 0 else 0,
         role=user.get("role"),
+        full=full,
     )
 
 
@@ -518,6 +520,18 @@ async def remove_triple(fact_id: str, comment: str = "", user=Depends(get_curren
         raise HTTPException(404, "Fact not found")
     audit_action(user, "graph.delete", fact_id)
     return {"deleted": fact_id}
+
+
+@router.post("/graph/sync")
+async def sync_graph_from_store(user=Depends(get_current_user)):
+    """Синхронизация фактов SQLite → Neo4j (после сбоя загрузки)."""
+    check_permission(user, "edit_graph")
+    from services.neo4j_loader import Neo4jLoader
+
+    audit_action(user, "graph.sync", details={})
+    with Neo4jLoader() as loader:
+        result = loader.sync_from_store()
+    return result
 
 
 @router.get("/graph/edits")

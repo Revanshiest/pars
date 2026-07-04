@@ -63,8 +63,10 @@ export const api = {
     return request(`/api/v1/documents/upload${q}`, { ...auth, method: 'POST', formData: fd })
   },
 
-  getGraphView: (auth, { limit = 150, entity_name, source_document } = {}) => {
-    const q = new URLSearchParams({ limit })
+  getGraphView: (auth, { limit = 0, full = false, entity_name, source_document } = {}) => {
+    const q = new URLSearchParams()
+    if (limit > 0) q.set('limit', limit)
+    if (full) q.set('full', 'true')
     if (entity_name) q.set('entity_name', entity_name)
     if (source_document) q.set('source_document', source_document)
     return request(`/api/v1/graph/view?${q}`, auth)
@@ -76,6 +78,11 @@ export const api = {
     if (source_document) q.set('source_document', source_document)
     return request(`/api/v1/graph/html?${q}`, { ...auth, responseType: 'text' })
   },
+
+  addTriple: (auth, body) =>
+    request('/api/v1/graph/triples', { ...auth, method: 'POST', body }),
+  syncGraph: (auth) =>
+    request('/api/v1/graph/sync', { ...auth, method: 'POST' }),
 
   filteredSearch: (auth, body) =>
     request('/api/v1/search/filtered', { ...auth, method: 'POST', body }),
@@ -155,7 +162,7 @@ export const api = {
   claimVerificationTasks: (auth, limit = 5) =>
     request('/api/v1/verification/claim', { ...auth, method: 'POST', body: { limit } }),
 
-  getOntology: () => request('/api/v1/ontology'),
+  getOntology: (auth) => request('/api/v1/ontology', auth),
 
   health: () => request('/health'),
 

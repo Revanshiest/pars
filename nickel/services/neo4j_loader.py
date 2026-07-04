@@ -65,6 +65,24 @@ class Neo4jLoader:
     def _safe_label(entity_type: str) -> str:
         return entity_type if entity_type in Neo4jLoader.VALID_LABELS else "Concept"
 
+    @staticmethod
+    def fact_to_triple(fact: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "subject": fact["subject"],
+            "subject_type": fact["subject_type"],
+            "relation": fact["relation"],
+            "object": fact["object"],
+            "object_type": fact["object_type"],
+            "properties": fact.get("properties") or {},
+            "confidence": fact.get("confidence"),
+            "geography": fact.get("geography"),
+            "verification_status": fact.get("verification_status", "pending"),
+            "version": fact.get("version", 1),
+            "fact_id": fact.get("id"),
+            "source_chunk": fact.get("source_chunk"),
+            "source_page": fact.get("source_page"),
+        }
+
     def _apply_type_labels(self, session, entity_id: str, entity_type: str):
         label = self._safe_label(entity_type)
         session.run(
@@ -234,3 +252,33 @@ class Neo4jLoader:
         if rows:
             return {"entities": rows[0]["entities"], "relationships": rows[0]["relationships"]}
         return {"entities": 0, "relationships": 0}
+
+    def sync_from_store(self, batch_size: int = 200) -> Dict[str, Any]:
+        from services.store import get_store
+
+        facts = [
+            f for f in get_store().list_facts(limit=100_000)
+            if f.get("verification_status") != "rejected"
+        ]
+        if not facts:
+            return {"relationships_loaded": 0, "facts": 0}
+
+        self.init_schema()
+        total = 0
+        errors: List[str] = []
+        triples = [self.fact_to_triple(f) for f in facts]
+        for i in range(0, len(triples), batch_size):
+            chunk = triples[i : i + batch_size]
+            try:
+                result = self.load_triples(chunk, job_id="sqlite-sync", source_document="sqlite_sync")
+                total += result.get("relationships_loaded", 0)
+            except Exception as e:
+                errors.append(str(e)[:200])
+                if len(errors) >= 5:
+                    break
+        return {
+            "relationships_loaded": total,
+            "facts": len(facts),
+            "errors": errors,
+            "stats": self.stats(),
+        }

@@ -915,7 +915,7 @@ class PlatformStore:
         job_id: Optional[str] = None,
         query: Optional[str] = None,
         role: Optional[str] = None,
-        limit: int = 100,
+        limit: Optional[int] = 100,
     ) -> List[Dict]:
         sql = "SELECT * FROM verified_facts WHERE 1=1"
         params: list = []
@@ -966,8 +966,10 @@ class PlatformStore:
                 " OR LOWER(COALESCE(json_extract(properties, '$.value'), '')) LIKE ?)"
             )
             params.extend([qpat, qpat, qpat, qpat, qpat, qpat])
-        sql += " ORDER BY updated_at DESC LIMIT ?"
-        params.append(limit)
+        sql += " ORDER BY updated_at DESC"
+        if limit is not None and limit > 0:
+            sql += " LIMIT ?"
+            params.append(limit)
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
             return [self._fact_row(r) for r in rows]

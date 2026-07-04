@@ -1,157 +1,65 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Search, ZoomIn, ZoomOut, Maximize2, ChevronRight, X, RotateCcw, Loader2, Network } from 'lucide-react'
+import {
+  Search, ZoomIn, ZoomOut, Maximize2, X, RotateCcw,
+  Loader2, Network, Plus, GitBranch, Filter,
+} from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../api/client'
-
-const TYPE_CFG = {
-  Process:     { from: '#8b5cf6', to: '#6d28d9', glow: '#8b5cf6' },
-  Material:    { from: '#10b981', to: '#047857', glow: '#10b981' },
-  Equipment:   { from: '#f59e0b', to: '#b45309', glow: '#f59e0b' },
-  Property:    { from: '#0ea5e9', to: '#0369a1', glow: '#0ea5e9' },
-  Parameter:   { from: '#06b6d4', to: '#0e7490', glow: '#06b6d4' },
-  Metric:      { from: '#14b8a6', to: '#0f766e', glow: '#14b8a6' },
-  Expert:      { from: '#f472b6', to: '#be185d', glow: '#f472b6' },
-  Publication: { from: '#fbbf24', to: '#92400e', glow: '#fbbf24' },
-  Facility:    { from: '#818cf8', to: '#3730a3', glow: '#818cf8' },
-  Concept:     { from: '#a78bfa', to: '#6d28d9', glow: '#a78bfa' },
-  Document:    { from: '#64748b', to: '#334155', glow: '#64748b' },
-  Geography:   { from: '#22c55e', to: '#15803d', glow: '#22c55e' },
-  Regulation:  { from: '#ef4444', to: '#b91c1c', glow: '#ef4444' },
-  Product:     { from: '#ec4899', to: '#9d174d', glow: '#ec4899' },
-  Experiment:  { from: '#6366f1', to: '#4338ca', glow: '#6366f1' },
-}
-
-const DEFAULT_CFG = { from: '#5302e0', to: '#4200b5', glow: '#5302e0' }
-
-const SIM_W = 960
-const SIM_H = 600
-
-function normalizeLayout(nodes, pad = 56) {
-  if (nodes.length < 2) return
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-  nodes.forEach(n => {
-    minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x)
-    minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y)
-  })
-  const w = maxX - minX || 1
-  const h = maxY - minY || 1
-  const scale = Math.min((SIM_W - pad * 2) / w, (SIM_H - pad * 2) / h, 1.8)
-  const cx = (minX + maxX) / 2
-  const cy = (minY + maxY) / 2
-  nodes.forEach(n => {
-    n.x = SIM_W / 2 + (n.x - cx) * scale
-    n.y = SIM_H / 2 + (n.y - cy) * scale
-    n.vx = 0
-    n.vy = 0
-  })
-}
-
-function buildDeg(edges) {
-  const d = {}
-  edges.forEach(e => {
-    d[e.source] = (d[e.source] || 0) + 1
-    d[e.target] = (d[e.target] || 0) + 1
-  })
-  return d
-}
-
-function initSimNodes(nodes, edges) {
-  const deg = buildDeg(edges)
-  const spread = Math.min(SIM_W, SIM_H) * (0.28 + Math.min(nodes.length, 120) / 400)
-  return nodes.map((n, i) => {
-    const angle = (i / Math.max(nodes.length, 1)) * Math.PI * 2 + (Math.random() - 0.5) * 0.4
-    const r = spread * (0.5 + Math.random() * 0.5)
-    return {
-      id: n.id,
-      label: n.name,
-      type: n.type || 'Concept',
-      degree: deg[n.id] || 1,
-      x: SIM_W / 2 + Math.cos(angle) * r,
-      y: SIM_H / 2 + Math.sin(angle) * r,
-      vx: 0, vy: 0, fx: null, fy: null, ax: 0, ay: 0,
-    }
-  })
-}
-
-function simTick(nodes, edges, alpha) {
-  const REP = 4200, LINK = 0.14, REST = 110 + Math.min(nodes.length, 80), GRAV = 0.07, DAMP = 0.84
-  const margin = 40
-  const map = {}
-  nodes.forEach(n => { map[n.id] = n; n.ax = 0; n.ay = 0 })
-  const cx = SIM_W / 2, cy = SIM_H / 2
-
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i], b = nodes[j]
-      const dx = b.x - a.x, dy = b.y - a.y
-      const d2 = dx * dx + dy * dy + 0.1
-      const d = Math.sqrt(d2)
-      const f = (REP * alpha) / d2
-      const nx = dx / d, ny = dy / d
-      a.ax -= f * nx; a.ay -= f * ny
-      b.ax += f * nx; b.ay += f * ny
-    }
-  }
-
-  edges.forEach(e => {
-    const a = map[e.source], b = map[e.target]
-    if (!a || !b) return
-    const dx = b.x - a.x, dy = b.y - a.y
-    const d = Math.sqrt(dx * dx + dy * dy) || 1
-    const f = (d - REST) * LINK * alpha
-    const nx = dx / d, ny = dy / d
-    a.ax += f * nx; a.ay += f * ny
-    b.ax -= f * nx; b.ay -= f * ny
-  })
-
-  nodes.forEach(n => {
-    n.ax += (cx - n.x) * GRAV * alpha
-    n.ay += (cy - n.y) * GRAV * alpha
-  })
-
-  nodes.forEach(n => {
-    if (n.fx !== null) { n.x = n.fx; n.y = n.fy; n.vx = 0; n.vy = 0; return }
-    n.vx = (n.vx + n.ax) * DAMP
-    n.vy = (n.vy + n.ay) * DAMP
-    n.x += n.vx
-    n.y += n.vy
-    if (n.x < margin) { n.x = margin; n.vx *= -0.25 }
-    if (n.x > SIM_W - margin) { n.x = SIM_W - margin; n.vx *= -0.25 }
-    if (n.y < margin) { n.y = margin; n.vy *= -0.25 }
-    if (n.y > SIM_H - margin) { n.y = SIM_H - margin; n.vy *= -0.25 }
-  })
-}
+import VisGraphCanvas from '../graph/VisGraphCanvas'
+import { EdgeFactCard } from '../graph/EdgeFactCard'
+import {
+  RELATION_META_FALLBACK,
+  relationLabel,
+  relationDescription,
+  relationColor,
+  edgeKey,
+  edgeRelation,
+  edgeFactText,
+  TYPE_CFG,
+  nodeTypeStyle,
+} from '../graph/constants'
 
 export default function GraphPage() {
-  const { auth } = useAuth()
+  const { auth, user } = useAuth()
+  const canEdit = ['analyst', 'project_manager', 'admin'].includes(user?.role)
   const [searchParams, setSearchParams] = useSearchParams()
   const centerEntity = searchParams.get('entity') || searchParams.get('entity_name') || ''
   const sourceDoc = searchParams.get('source') || ''
 
-  const [, forceRender] = useState(0)
+  const canvasRef = useRef(null)
   const [graphData, setGraphData] = useState({ nodes: [], edges: [], documents: [] })
+  const [relationMeta, setRelationMeta] = useState(RELATION_META_FALLBACK)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState(null)
+  const [selectedEdge, setSelectedEdge] = useState(null)
   const [hovered, setHovered] = useState(null)
+  const [hoveredEdge, setHoveredEdge] = useState(null)
   const [search, setSearch] = useState(centerEntity)
-  const [viewMode, setViewMode] = useState('canvas')
-  const [htmlBlobUrl, setHtmlBlobUrl] = useState(null)
-  const [htmlLoading, setHtmlLoading] = useState(false)
-  const [xform, setXform] = useState({ x: 0, y: 0, s: 1 })
-  const [isPan, setIsPan] = useState(false)
+  const [nodeFilter, setNodeFilter] = useState('')
+  const [relationFilter, setRelationFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [showAllLabels, setShowAllLabels] = useState(false)
+  const [loadFull, setLoadFull] = useState(false)
+  const [rendering, setRendering] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
+  const [addBusy, setAddBusy] = useState(false)
+  const [triple, setTriple] = useState({
+    subject: '', subject_type: 'Material', relation: 'related_to',
+    object: '', object_type: 'Process', comment: '',
+  })
 
-  const nodesRef = useRef([])
-  const rafRef = useRef(null)
-  const alphaRef = useRef(1)
-  const dragRef = useRef(null)
-  const panRef = useRef(null)
-  const xformRef = useRef({ x: 0, y: 0, s: 1 })
-  const svgRef = useRef(null)
+  useEffect(() => {
+    api.getOntology(auth).then(data => {
+      if (data?.relation_meta) setRelationMeta({ ...RELATION_META_FALLBACK, ...data.relation_meta })
+    }).catch(() => {})
+  }, [auth])
 
-  useEffect(() => { xformRef.current = xform }, [xform])
+  useEffect(() => {
+    setSearch(centerEntity)
+  }, [centerEntity])
 
   const applyCenter = useCallback((name) => {
     const p = {}
@@ -160,11 +68,6 @@ export default function GraphPage() {
     setSearchParams(p)
   }, [sourceDoc, setSearchParams])
 
-  useEffect(() => {
-    setSearch(centerEntity)
-  }, [centerEntity])
-
-  // Авто-загрузка ego-графа при вводе
   useEffect(() => {
     const q = search.trim()
     if (q === centerEntity) return undefined
@@ -180,203 +83,123 @@ export default function GraphPage() {
   const apiEdges = graphData.edges || []
   const entityMode = Boolean(centerEntity.trim())
   const pendingSearch = Boolean(search.trim() && search.trim() !== centerEntity)
+  const documents = graphData.documents || []
 
-  const displayNodes = apiNodes
-  const displayEdges = apiEdges
+  const relationTypesInGraph = useMemo(() => {
+    const s = new Set(apiEdges.map(e => edgeRelation(e)).filter(Boolean))
+    return [...s].sort()
+  }, [apiEdges])
 
-  const connectedIds = useMemo(() => {
-    if (!selected) return null
-    const s = new Set()
-    displayEdges.forEach(e => {
-      if (e.source === selected) s.add(e.target)
-      if (e.target === selected) s.add(e.source)
+  const nodeTypesInGraph = useMemo(() => {
+    const s = new Set(apiNodes.map(n => n.type || 'Concept'))
+    return [...s].sort((a, b) => {
+      const order = Object.keys(TYPE_CFG)
+      return (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b))
     })
-    return s
-  }, [selected, displayEdges])
+  }, [apiNodes])
 
-  const connectedEdges = useMemo(() =>
-    selected ? displayEdges.filter(e => e.source === selected || e.target === selected) : []
-  , [selected, displayEdges])
+  useEffect(() => {
+    setLoadFull(false)
+  }, [centerEntity, sourceDoc])
 
-  const startSim = useCallback((edges) => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    const loop = () => {
-      if (alphaRef.current < 0.004) {
-        normalizeLayout(nodesRef.current)
-        forceRender(n => n + 1)
-        return
-      }
-      simTick(nodesRef.current, edges, alphaRef.current)
-      alphaRef.current *= 0.97
-      forceRender(n => n + 1)
-      rafRef.current = requestAnimationFrame(loop)
-    }
-    rafRef.current = requestAnimationFrame(loop)
-  }, [])
+  const shouldFetchFull = Boolean(centerEntity || sourceDoc || loadFull)
+
+  const filteredNodes = useMemo(() =>
+    apiNodes.filter(n => {
+      if (typeFilter && (n.type || 'Concept') !== typeFilter) return false
+      if (!nodeFilter) return true
+      return (n.name || '').toLowerCase().includes(nodeFilter.toLowerCase())
+    })
+  , [apiNodes, nodeFilter, typeFilter])
+
+  const filteredIds = useMemo(() => new Set(filteredNodes.map(n => n.id)), [filteredNodes])
+
+  const filteredEdges = useMemo(() =>
+    apiEdges.filter(e => {
+      if (!filteredIds.has(e.source) || !filteredIds.has(e.target)) return false
+      if (relationFilter && edgeRelation(e) !== relationFilter) return false
+      return true
+    })
+  , [apiEdges, filteredIds, relationFilter])
+
+  const connectedEdges = useMemo(() => {
+    if (!selected) return []
+    return filteredEdges.filter(e => e.source === selected || e.target === selected)
+  }, [selected, filteredEdges])
+
+  useEffect(() => {
+    if (filteredNodes.length > 0 && !loading) setRendering(true)
+    else setRendering(false)
+  }, [filteredNodes.length, loading, centerEntity, sourceDoc, loadFull])
+
+  const reloadGraph = useCallback(() => {
+    setLoading(true)
+    setRendering(false)
+    setError('')
+    return api.getGraphView(auth, {
+      entity_name: centerEntity || undefined,
+      source_document: sourceDoc || undefined,
+      full: shouldFetchFull,
+    })
+      .then(data => setGraphData(data))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [auth, centerEntity, sourceDoc, shouldFetchFull])
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setRendering(false)
     setError('')
     api.getGraphView(auth, {
-      limit: 150,
       entity_name: centerEntity || undefined,
       source_document: sourceDoc || undefined,
+      full: shouldFetchFull,
     })
       .then(data => { if (!cancelled) setGraphData(data) })
       .catch(e => { if (!cancelled) setError(e.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [auth, centerEntity, sourceDoc])
+  }, [auth, centerEntity, sourceDoc, shouldFetchFull])
 
-  useEffect(() => {
-    if (viewMode !== 'html') return undefined
-    let cancelled = false
-    setHtmlLoading(true)
+  const syncFromSqlite = async () => {
+    setAddBusy(true)
     setError('')
-    api.getGraphHtml(auth, {
-      limit: 500,
-      entity_name: centerEntity || undefined,
-      source_document: sourceDoc || undefined,
-    })
-      .then(html => {
-        if (cancelled) return
-        const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }))
-        setHtmlBlobUrl(prev => {
-          if (prev) URL.revokeObjectURL(prev)
-          return url
-        })
-      })
-      .catch(e => { if (!cancelled) setError(e.message) })
-      .finally(() => { if (!cancelled) setHtmlLoading(false) })
-    return () => {
-      cancelled = true
-      setHtmlBlobUrl(prev => {
-        if (prev) URL.revokeObjectURL(prev)
-        return null
-      })
+    try {
+      await api.syncGraph(auth)
+      await reloadGraph()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setAddBusy(false)
     }
-  }, [auth, centerEntity, sourceDoc, viewMode])
-
-  useEffect(() => {
-    if (viewMode !== 'canvas' || !apiNodes.length) return
-    nodesRef.current = initSimNodes(displayNodes.length ? displayNodes : apiNodes, displayEdges.length ? displayEdges : apiEdges)
-    alphaRef.current = 1
-    startSim(displayEdges.length ? displayEdges : apiEdges)
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
-  }, [viewMode, apiNodes, apiEdges, displayNodes, displayEdges, startSim])
-
-  const fitToView = useCallback(() => {
-    const rect = svgRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const scale = Math.min(rect.width / SIM_W, rect.height / SIM_H) * 1.35
-    const t = {
-      s: scale,
-      x: (rect.width - SIM_W * scale) / 2,
-      y: (rect.height - SIM_H * scale) / 2,
-    }
-    xformRef.current = t
-    setXform(t)
-  }, [])
-
-  useEffect(() => {
-    if (!loading) fitToView()
-    window.addEventListener('resize', fitToView)
-    return () => window.removeEventListener('resize', fitToView)
-  }, [loading, fitToView])
-
-  const reheat = () => { alphaRef.current = 0.8; startSim(displayEdges); setTimeout(() => normalizeLayout(nodesRef.current), 1200) }
-
-  const toSim = useCallback((cx, cy) => {
-    const rect = svgRef.current?.getBoundingClientRect()
-    if (!rect) return { x: 0, y: 0 }
-    const t = xformRef.current
-    return { x: (cx - rect.left - t.x) / t.s, y: (cy - rect.top - t.y) / t.s }
-  }, [])
-
-  const onNodeDown = useCallback((e, id) => {
-    e.stopPropagation()
-    const pt = toSim(e.clientX, e.clientY)
-    const node = nodesRef.current.find(n => n.id === id)
-    if (!node) return
-    node.fx = node.x; node.fy = node.y
-    dragRef.current = { id, ox: pt.x - node.x, oy: pt.y - node.y, moved: false }
-    alphaRef.current = Math.max(alphaRef.current, 0.15)
-    startSim(displayEdges)
-  }, [toSim, displayEdges, startSim])
-
-  const onBgDown = useCallback((e) => {
-    if (e.button !== 0) return
-    panRef.current = { sx: e.clientX, sy: e.clientY, tx: xformRef.current.x, ty: xformRef.current.y }
-    setIsPan(true)
-  }, [])
-
-  const onMove = useCallback((e) => {
-    if (dragRef.current) {
-      const pt = toSim(e.clientX, e.clientY)
-      const node = nodesRef.current.find(n => n.id === dragRef.current.id)
-      if (node) {
-        node.fx = pt.x - dragRef.current.ox
-        node.fy = pt.y - dragRef.current.oy
-        node.x = node.fx; node.y = node.fy
-        dragRef.current.moved = true
-        forceRender(n => n + 1)
-      }
-    } else if (panRef.current) {
-      const dx = e.clientX - panRef.current.sx
-      const dy = e.clientY - panRef.current.sy
-      const t = { ...xformRef.current, x: panRef.current.tx + dx, y: panRef.current.ty + dy }
-      xformRef.current = t
-      setXform(t)
-    }
-  }, [toSim])
-
-  const onUp = useCallback(() => {
-    if (dragRef.current) {
-      const { id, moved } = dragRef.current
-      const node = nodesRef.current.find(n => n.id === id)
-      if (node) { node.fx = null; node.fy = null }
-      if (!moved) setSelected(s => s === id ? null : id)
-      dragRef.current = null
-    }
-    panRef.current = null
-    setIsPan(false)
-  }, [])
-
-  useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-    const onWheel = (e) => {
-      e.preventDefault()
-      const f = e.deltaY < 0 ? 1.12 : 1 / 1.12
-      const rect = svg.getBoundingClientRect()
-      const mx = e.clientX - rect.left, my = e.clientY - rect.top
-      setXform(t => {
-        const ns = Math.max(0.12, Math.min(6, t.s * f))
-        const sf = ns / t.s
-        return { x: mx - sf * (mx - t.x), y: my - sf * (my - t.y), s: ns }
-      })
-    }
-    svg.addEventListener('wheel', onWheel, { passive: false })
-    return () => svg.removeEventListener('wheel', onWheel)
-  }, [])
-
-  const getPos = (id) => {
-    const n = nodesRef.current.find(n => n.id === id)
-    return n ? { x: n.x, y: n.y } : null
   }
-  const getR = (id) => {
-    const n = nodesRef.current.find(n => n.id === id)
-    return Math.min(15, 5 + (n?.degree || 1) * 1.7)
+
+  const submitTriple = async (e) => {
+    e.preventDefault()
+    setAddBusy(true)
+    setError('')
+    try {
+      await api.addTriple(auth, triple)
+      setShowAdd(false)
+      setTriple({ subject: '', subject_type: 'Material', relation: 'related_to', object: '', object_type: 'Process', comment: '' })
+      await reloadGraph()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setAddBusy(false)
+    }
   }
-  const invS = 1 / xform.s
 
-  const selNode = apiNodes.find(n => n.id === selected)
-  const nodeById = useMemo(() => Object.fromEntries(apiNodes.map(n => [n.id, n])), [apiNodes])
+  const selectNode = (id) => {
+    setSelected(id)
+    setSelectedEdge(null)
+    if (id) canvasRef.current?.focusNode(id)
+  }
 
-  const submitSearch = () => {
-    const q = search.trim()
-    applyCenter(q)
+  const selectEdge = (edge) => {
+    setSelectedEdge(edge)
+    setSelected(null)
   }
 
   const applySource = (doc) => {
@@ -386,9 +209,12 @@ export default function GraphPage() {
     setSearchParams(p)
   }
 
-  const documents = graphData.documents || []
+  const selNode = apiNodes.find(n => n.id === selected)
+  const nodeById = useMemo(() => Object.fromEntries(apiNodes.map(n => [n.id, n])), [apiNodes])
+  const selectedEdgeId = selectedEdge ? (selectedEdge.visId || edgeKey(selectedEdge)) : null
+  const panelOpen = selected || selectedEdge
 
-  if (loading && viewMode === 'canvas') {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-96 text-surface-400 gap-2">
         <Loader2 size={20} className="animate-spin-slow" />
@@ -399,14 +225,14 @@ export default function GraphPage() {
 
   return (
     <div className="h-full flex gap-4" style={{ height: 'calc(100vh - 8rem)' }}>
-      <div className="w-60 shrink-0 flex flex-col gap-3">
+      <div className="w-64 shrink-0 flex flex-col gap-3 overflow-y-auto">
         <div className="card p-3">
           <div className="relative">
             <Search size={13} className="absolute left-2.5 top-2.5 text-surface-400" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitSearch() } }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyCenter(search.trim()) } }}
               placeholder="Узел: медь, Cerro Verde…"
               className="input pl-8 py-2 text-xs"
             />
@@ -437,160 +263,280 @@ export default function GraphPage() {
               </option>
             ))}
           </select>
-          <div className="flex gap-1">
-            <button
-              type="button"
-              className={clsx('flex-1 text-xs py-1.5 rounded-lg border', viewMode === 'canvas' ? 'bg-brand-600 text-white border-brand-600' : 'border-surface-700')}
-              onClick={() => setViewMode('canvas')}
-            >
-              Обзор (SVG)
-            </button>
-            <button
-              type="button"
-              className={clsx('flex-1 text-xs py-1.5 rounded-lg border', viewMode === 'html' ? 'bg-brand-600 text-white border-brand-600' : 'border-surface-700')}
-              onClick={() => setViewMode('html')}
-            >
-              HTML (PyVis)
-            </button>
+          <div className="relative">
+            <Search size={11} className="absolute left-2.5 top-2 text-surface-400" />
+            <input
+              value={nodeFilter}
+              onChange={e => setNodeFilter(e.target.value)}
+              placeholder="Фильтр узлов…"
+              className="input pl-7 py-1.5 text-xs"
+            />
           </div>
         </div>
 
-        <div className="card p-3">
-          <div className="grid grid-cols-2 gap-2 mb-2">
+        <div className="card p-3 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
             <div className="text-center bg-brand-50 rounded-xl py-2">
-              <div className="text-xl font-black text-brand-600">{displayNodes.length}</div>
+              <div className="text-xl font-black text-brand-600">{filteredNodes.length}</div>
               <div className="text-[10px] text-brand-400">узлов</div>
             </div>
             <div className="text-center bg-surface-900 rounded-xl py-2">
-              <div className="text-xl font-black text-surface-200">{displayEdges.length}</div>
+              <div className="text-xl font-black text-surface-200">{filteredEdges.length}</div>
               <div className="text-[10px] text-surface-400">связей</div>
             </div>
           </div>
-          <p className="text-xs text-surface-400 mt-2">
+          <label className="flex items-center gap-2 text-[10px] text-surface-400 cursor-pointer">
+            <input type="checkbox" checked={showAllLabels} onChange={e => setShowAllLabels(e.target.checked)} className="rounded" />
+            Подписи всех связей
+          </label>
+          <p className="text-[10px] text-surface-500 leading-snug">
             {entityMode
               ? `Центр «${centerEntity}» — все связи.`
-              : 'Обзор до 150 узлов. Введите термин — загрузятся все его связи.'}
+              : sourceDoc
+                ? `Документ «${sourceDoc}».`
+                : loadFull
+                  ? 'Полный граф — живая физика, подписи у хабов.'
+                  : 'Выберите документ или узел — быстрая загрузка.'}
           </p>
-          <button type="button" onClick={reheat} className="btn-secondary w-full text-xs mt-2">
-            <RotateCcw size={11} /> Пересчитать
+          {!shouldFetchFull && (
+            <button type="button" className="btn-secondary w-full text-xs" onClick={() => setLoadFull(true)}>
+              Загрузить весь граф
+            </button>
+          )}
+          <div>
+            <label className="label mb-1 flex items-center gap-1"><Filter size={10} /> Тип связи</label>
+            <select className="input text-xs py-1.5" value={relationFilter} onChange={e => setRelationFilter(e.target.value)}>
+              <option value="">Все ({apiEdges.length})</option>
+              {relationTypesInGraph.map(r => (
+                <option key={r} value={r}>
+                  {relationMeta[r]?.label_ru || r.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button type="button" onClick={() => canvasRef.current?.stabilize()} className="btn-secondary w-full text-xs">
+            <RotateCcw size={11} /> Перезапустить физику
           </button>
         </div>
+
+        {nodeTypesInGraph.length > 0 && (
+          <div className="card p-3">
+            <div className="label mb-2">Типы узлов</div>
+            <div className="space-y-1 max-h-36 overflow-y-auto">
+              <button
+                type="button"
+                onClick={() => setTypeFilter('')}
+                className={clsx(
+                  'w-full flex items-center gap-2 text-left text-[10px] px-2 py-1 rounded-lg transition-colors',
+                  !typeFilter ? 'bg-brand-50 text-brand-700' : 'hover:bg-surface-900 text-surface-400',
+                )}
+              >
+                <span className="w-2 h-2 rounded-full shrink-0 bg-surface-400" />
+                <span>Все типы</span>
+              </button>
+              {nodeTypesInGraph.map(t => {
+                const cfg = nodeTypeStyle(t)
+                const count = apiNodes.filter(n => (n.type || 'Concept') === t).length
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTypeFilter(typeFilter === t ? '' : t)}
+                    className={clsx(
+                      'w-full flex items-center gap-2 text-left text-[10px] px-2 py-1 rounded-lg transition-colors',
+                      typeFilter === t ? 'bg-brand-50 text-brand-700' : 'hover:bg-surface-900 text-surface-400',
+                    )}
+                  >
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: cfg.color }} />
+                    <span className="truncate flex-1">{t}</span>
+                    <span className="text-surface-500">{count}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {relationTypesInGraph.length > 0 && (
+          <div className="card p-3">
+            <div className="label mb-2">Легенда связей</div>
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {relationTypesInGraph.map(r => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setRelationFilter(relationFilter === r ? '' : r)}
+                  className={clsx(
+                    'w-full flex items-center gap-2 text-left text-[10px] px-2 py-1 rounded-lg transition-colors',
+                    relationFilter === r ? 'bg-brand-50 text-brand-700' : 'hover:bg-surface-900 text-surface-400',
+                  )}
+                >
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: relationColor(r) }} />
+                  <span className="truncate">{relationMeta[r]?.label_ru || r}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {canEdit && (
+          <div className="card p-3">
+            <button type="button" className="btn-secondary w-full text-xs mb-2" onClick={() => setShowAdd(v => !v)}>
+              <Plus size={11} /> {showAdd ? 'Скрыть' : 'Добавить связь'}
+            </button>
+            {showAdd && (
+              <form onSubmit={submitTriple} className="space-y-2">
+                <input className="input text-xs py-1.5" placeholder="Субъект" required value={triple.subject}
+                  onChange={e => setTriple(t => ({ ...t, subject: e.target.value }))} />
+                <input className="input text-xs py-1.5" placeholder="Объект" required value={triple.object}
+                  onChange={e => setTriple(t => ({ ...t, object: e.target.value }))} />
+                <select className="input text-xs py-1.5" value={triple.relation}
+                  onChange={e => setTriple(t => ({ ...t, relation: e.target.value }))}>
+                  {Object.keys(relationMeta).map(r => (
+                    <option key={r} value={r}>{relationMeta[r]?.label_ru || r}</option>
+                  ))}
+                </select>
+                <button type="submit" className="btn-primary w-full text-xs" disabled={addBusy}>
+                  {addBusy ? <Loader2 size={12} className="animate-spin-slow" /> : 'Сохранить'}
+                </button>
+              </form>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="flex-1 card overflow-hidden relative" style={{ background: viewMode === 'html' ? '#222' : '#f7f4fd' }}>
+      <div className="flex-1 card overflow-hidden relative" style={{ background: '#f7f4fd' }}>
         {error && (
           <div className="absolute top-3 left-3 z-10 card p-2 text-xs text-red-500 border-red-200">{error}</div>
         )}
 
-        {viewMode === 'html' ? (
-          htmlLoading ? (
-            <div className="absolute inset-0 flex items-center justify-center text-surface-400 gap-2">
-              <Loader2 size={20} className="animate-spin-slow" />
-              Генерация HTML-графа…
-            </div>
-          ) : htmlBlobUrl ? (
-            <iframe
-              title="Knowledge graph"
-              src={htmlBlobUrl}
-              className="w-full h-full border-0"
-              sandbox="allow-scripts allow-same-origin"
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-surface-400 text-sm">
-              Нет данных для визуализации
-            </div>
-          )
-        ) : (
-          <>
-        {!apiNodes.length && !error && (
-          <div className="absolute inset-0 flex items-center justify-center text-surface-400 text-sm text-center px-6">
-            {entityMode
-              ? `Узел «${centerEntity}» не найден. Попробуйте другое написание или снимите фильтр источника.`
-              : 'Граф пуст. Загрузите документы или выберите источник «schlesinger».'}
+        {!apiNodes.length && !error && !loading && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-400 text-sm gap-3 z-10 px-6 text-center">
+            <p>
+              {entityMode
+                ? `Узел «${centerEntity}» не найден.`
+                : shouldFetchFull
+                  ? 'Граф пуст. Синхронизируйте данные из SQLite.'
+                  : 'Выберите источник, введите узел (например «медь») или загрузите весь граф.'}
+            </p>
+            {!shouldFetchFull && (
+              <button type="button" className="btn-primary text-xs" onClick={() => setLoadFull(true)}>
+                Загрузить весь граф
+              </button>
+            )}
+            {canEdit && shouldFetchFull && (
+              <button type="button" className="btn-primary text-xs" onClick={syncFromSqlite} disabled={addBusy}>
+                {addBusy ? <Loader2 size={14} className="animate-spin-slow" /> : 'Синхронизировать из SQLite'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {rendering && filteredNodes.length > 0 && (
+          <div className="absolute inset-0 flex items-center justify-center bg-[#f7f4fd]/80 z-10 text-surface-400 text-sm gap-2">
+            <Loader2 size={18} className="animate-spin-slow" />
+            Инициализация графа…
           </div>
         )}
 
         <div className="absolute top-3 right-3 z-10 flex gap-1">
           {[
-            [ZoomIn, () => setXform(t => ({ ...t, s: Math.min(6, t.s * 1.2) }))],
-            [ZoomOut, () => setXform(t => ({ ...t, s: Math.max(0.12, t.s / 1.2) }))],
-            [Maximize2, fitToView],
+            [ZoomIn, () => canvasRef.current?.zoomIn()],
+            [ZoomOut, () => canvasRef.current?.zoomOut()],
+            [Maximize2, () => canvasRef.current?.fit()],
           ].map(([Icon, fn], i) => (
             <button key={i} type="button" onClick={fn}
-              className="w-8 h-8 bg-white border border-surface-700 rounded-lg flex items-center justify-center hover:border-brand-300">
+              className="w-8 h-8 bg-white border border-surface-700 rounded-lg flex items-center justify-center hover:border-brand-300 shadow-card">
               <Icon size={13} className="text-surface-400" />
             </button>
           ))}
         </div>
 
-        <svg ref={svgRef} width="100%" height="100%"
-          className={clsx('select-none', isPan ? 'cursor-grabbing' : 'cursor-grab')}
-          onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}>
-          <rect width="100%" height="100%" fill="#f7f4fd" onMouseDown={onBgDown} />
-          <g transform={`translate(${xform.x},${xform.y}) scale(${xform.s})`}>
-            {displayEdges.map((edge, i) => {
-              const s = getPos(edge.source)
-              const t = getPos(edge.target)
-              if (!s || !t) return null
-              const dx = t.x - s.x, dy = t.y - s.y
-              const len = Math.sqrt(dx * dx + dy * dy) || 1
-              const padS = (getR(edge.source) + 2) * invS
-              const padT = (getR(edge.target) + 2) * invS
-              const x1 = s.x + dx / len * padS, y1 = s.y + dy / len * padS
-              const x2 = t.x - dx / len * padT, y2 = t.y - dy / len * padT
-              const isConn = selected && (edge.source === selected || edge.target === selected)
-              const dim = selected && !isConn
-              const sw = invS
-              return (
-                <g key={i} style={{ opacity: dim ? 0.08 : isConn ? 1 : 0.6 }} pointerEvents="none">
-                  <line x1={x1} y1={y1} x2={x2} y2={y2}
-                    stroke={isConn ? '#5302e0' : '#c0b3d8'} strokeWidth={isConn ? sw * 1.5 : sw} />
-                  {isConn && edge.label && (
-                    <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 4 * invS}
-                      textAnchor="middle" fontSize={7 * invS} fill="#9880c0">{edge.label}</text>
-                  )}
-                </g>
-              )
-            })}
+        {(hoveredEdge || hovered) && (
+          <div className="absolute bottom-3 left-3 z-10 card px-3 py-2.5 text-xs max-w-lg shadow-card pointer-events-none">
+            {hoveredEdge ? (
+              <EdgeFactCard edge={hoveredEdge} relationMeta={relationMeta} nodeById={nodeById} compact />
+            ) : hovered && nodeById[hovered] ? (
+              <>
+                <span className="badge bg-brand-50 text-brand-600 border border-brand-100 text-[10px] mr-1">
+                  {nodeById[hovered].type}
+                </span>
+                <span className="font-semibold text-surface-100">{nodeById[hovered].name}</span>
+              </>
+            ) : null}
+          </div>
+        )}
 
-            {displayNodes.map(node => {
-              const p = getPos(node.id)
-              if (!p) return null
-              const cfg = TYPE_CFG[node.type] || DEFAULT_CFG
-              const isSel = selected === node.id
-              const isCenter = entityMode && (node.name || '').toLowerCase().includes(centerEntity.toLowerCase())
-              const isConn = connectedIds?.has(node.id)
-              const dim = selected && !isSel && !isConn
-              const r = getR(node.id)
-              const label = (node.name || '').length > 22 ? node.name.slice(0, 21) + '…' : node.name
-              return (
-                <g key={node.id}
-                  transform={`translate(${p.x},${p.y}) scale(${invS})`}
-                  style={{ opacity: dim ? 0.15 : 1, cursor: 'pointer' }}
-                  onMouseDown={e => onNodeDown(e, node.id)}
-                  onMouseEnter={() => setHovered(node.id)}
-                  onMouseLeave={() => setHovered(null)}>
-                  {isSel && <circle r={r + 4} fill="none" stroke="#5302e0" strokeWidth="1.5" />}
-                  {isCenter && !isSel && <circle r={r + 6} fill="none" stroke="#f59e0b" strokeWidth="2" strokeDasharray="4 2" />}
-                  <circle r={r} fill={cfg.glow}
-                    stroke={hovered === node.id || isSel ? 'white' : 'none'}
-                    strokeWidth={hovered === node.id || isSel ? 1.5 : 0} />
-                  <text x={r + 6} dominantBaseline="middle" fontSize={isSel ? 12 : 11}
-                    fontWeight={isSel ? 700 : 500} fill={isSel ? '#5302e0' : '#3a2a5c'}
-                    style={{ pointerEvents: 'none' }}>{label}</text>
-                </g>
-              )
-            })}
-          </g>
-        </svg>
-          </>
+        {filteredNodes.length > 0 && (
+          <VisGraphCanvas
+            ref={canvasRef}
+            nodes={filteredNodes}
+            edges={filteredEdges}
+            relationMeta={relationMeta}
+            selectedNodeId={selected}
+            selectedEdgeId={selectedEdgeId}
+            showEdgeLabels={showAllLabels}
+            onReady={() => setRendering(false)}
+            onNodeSelect={(id) => selectNode(id)}
+            onEdgeSelect={(edge) => selectEdge(edge)}
+            onNodeHover={setHovered}
+            onEdgeHover={setHoveredEdge}
+            onBackgroundClick={() => { setSelected(null); setSelectedEdge(null) }}
+          />
         )}
       </div>
 
-      {viewMode === 'canvas' && (
-      <div className={clsx('shrink-0 transition-all duration-300 overflow-hidden', selected ? 'w-72' : 'w-0')}>
-        {selNode && (
-          <div className="card h-full overflow-auto" style={{ width: '288px' }}>
+      <div className={clsx('shrink-0 transition-all duration-300 overflow-hidden', panelOpen ? 'w-80' : 'w-0')}>
+        {selectedEdge && (
+          <div className="card h-full overflow-auto" style={{ width: '320px' }}>
+            <div className="p-4 border-b border-surface-700 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <GitBranch size={14} className="text-brand-600 shrink-0" />
+                  <span
+                    className="badge border text-[10px]"
+                    style={{ color: relationColor(edgeRelation(selectedEdge)), borderColor: relationColor(edgeRelation(selectedEdge)), background: `${relationColor(edgeRelation(selectedEdge))}15` }}
+                  >
+                    {relationLabel(selectedEdge, relationMeta)}
+                  </span>
+                </div>
+              </div>
+              <button type="button" className="btn-ghost p-1" onClick={() => setSelectedEdge(null)}>
+                <X size={14} />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <EdgeFactCard edge={selectedEdge} relationMeta={relationMeta} nodeById={nodeById} />
+              <div className="rounded-xl border border-surface-700 p-3 bg-surface-900/50">
+                <p className="label mb-1">От</p>
+                <p className="text-sm font-semibold text-surface-100">
+                  {selectedEdge.source_name || nodeById[selectedEdge.source]?.name}
+                </p>
+                <button type="button" className="text-xs text-brand-600 mt-2" onClick={() => selectNode(selectedEdge.source)}>
+                  Выбрать узел →
+                </button>
+              </div>
+              <div className="flex justify-center">
+                <div className="px-3 py-1 rounded-full text-[10px] font-medium text-white"
+                  style={{ background: relationColor(edgeRelation(selectedEdge)) }}>
+                  {relationLabel(selectedEdge, relationMeta)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-surface-700 p-3 bg-surface-900/50">
+                <p className="label mb-1">К</p>
+                <p className="text-sm font-semibold text-surface-100">
+                  {selectedEdge.target_name || nodeById[selectedEdge.target]?.name}
+                </p>
+                <button type="button" className="text-xs text-brand-600 mt-2" onClick={() => selectNode(selectedEdge.target)}>
+                  Выбрать узел →
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {selNode && !selectedEdge && (
+          <div className="card h-full overflow-auto" style={{ width: '320px' }}>
             <div className="p-4 border-b border-surface-700 flex items-start justify-between gap-2">
               <div>
                 <span className="badge bg-brand-50 text-brand-600 border border-brand-100">{selNode.type}</span>
@@ -609,28 +555,53 @@ export default function GraphPage() {
               <button type="button" className="btn-secondary w-full text-xs" onClick={() => applyCenter(selNode.name)}>
                 <Network size={12} /> Центрировать подграф
               </button>
+              <button type="button" className="btn-ghost w-full text-xs" onClick={() => canvasRef.current?.focusNode(selNode.id)}>
+                Приблизить к узлу
+              </button>
               <div>
                 <div className="label mb-2">Связи ({connectedEdges.length})</div>
-                <div className="space-y-1.5">
+                <div className="space-y-2 max-h-[50vh] overflow-y-auto">
                   {connectedEdges.map((edge, i) => {
-                    const otherId = edge.source === selected ? edge.target : edge.source
+                    const outgoing = edge.source === selected
+                    const otherId = outgoing ? edge.target : edge.source
                     const other = nodeById[otherId]
+                    const color = relationColor(edgeRelation(edge))
                     return (
-                      <button key={i} type="button" onClick={() => setSelected(otherId)}
-                        className="w-full flex items-center gap-2 p-2 rounded-lg text-xs border bg-surface-900 border-surface-700 text-left hover:border-brand-300">
-                        <ChevronRight size={10} className="text-brand-600 shrink-0" />
-                        <span className="text-surface-400 shrink-0 text-[10px]">{edge.label}</span>
-                        <span className="text-surface-200 truncate">{other?.name}</span>
+                      <button
+                        key={edge.id || i}
+                        type="button"
+                        onClick={() => selectEdge(edge)}
+                        className="w-full p-2.5 rounded-xl text-left border bg-white border-surface-700 hover:border-brand-300 transition-all group"
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                          <span className="text-[10px] font-semibold" style={{ color }}>
+                            {relationLabel(edge, relationMeta)}
+                          </span>
+                          <span className="text-[10px] text-surface-400 ml-auto">
+                            {outgoing ? '→' : '←'}
+                          </span>
+                        </div>
+                        <p className="text-xs font-medium text-surface-100 truncate group-hover:text-brand-700">
+                          {other?.name}
+                        </p>
+                        {edgeFactText(edge) && (
+                          <p className="text-[10px] text-surface-400 mt-1 line-clamp-2">
+                            {edgeFactText(edge)}
+                          </p>
+                        )}
                       </button>
                     )
                   })}
+                  {connectedEdges.length === 0 && (
+                    <p className="text-xs text-surface-400">Нет связей в текущей выборке</p>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         )}
       </div>
-      )}
     </div>
   )
 }
