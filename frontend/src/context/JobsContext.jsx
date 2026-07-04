@@ -24,7 +24,7 @@ export function JobsProvider({ children }) {
 
   useEffect(() => {
     refreshJobs()
-    const t = setInterval(refreshJobs, 3000)
+    const t = setInterval(refreshJobs, 10000)
     return () => clearInterval(t)
   }, [refreshJobs])
 

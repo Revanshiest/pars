@@ -19,6 +19,7 @@ from services.analytics import (
 from services.export_service import export_jsonld, export_markdown, export_pdf, save_export
 from services.graph_editor import add_triple, delete_triple, list_edits, update_triple
 from services.search_filters import compare_practices, filtered_search
+from services.search_runtime import run_search
 from services.auth_bootstrap import assignable_roles, env_admin_spec, is_env_admin_email
 from services.store import ROLE_PERMISSIONS, get_store
 
@@ -240,14 +241,14 @@ async def create_glossary_term(body: GlossaryTermCreate, user=Depends(get_curren
 async def search_filtered(body: FilteredSearchRequest, user=Depends(get_current_user)):
     check_permission(user, "search")
     audit_action(user, "search.filtered", details={"query": body.query})
-    return filtered_search(**body.model_dump(), role=user["role"])
+    return await run_search(filtered_search, **body.model_dump(), role=user["role"])
 
 
 @router.post("/search/compare-practices")
 async def search_compare_practices(body: ComparePracticesRequest, user=Depends(get_current_user)):
     check_permission(user, "compare")
     audit_action(user, "search.compare_practices", details={"query": body.query})
-    return compare_practices(**body.model_dump())
+    return await run_search(compare_practices, **body.model_dump())
 
 
 @router.post("/search/hybrid")
@@ -256,7 +257,7 @@ async def search_hybrid(body: FilteredSearchRequest, user=Depends(get_current_us
     from services.hybrid_search import hybrid_ranked_search
     audit_action(user, "search.hybrid", details={"query": body.query})
     try:
-        return hybrid_ranked_search(**body.model_dump(), role=user["role"])
+        return await run_search(hybrid_ranked_search, **body.model_dump(), role=user["role"])
     except Exception as exc:
         raise HTTPException(503, f"Search unavailable: {exc}") from exc
 

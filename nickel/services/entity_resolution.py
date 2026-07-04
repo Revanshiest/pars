@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Dict, List, Tuple
 
-from langchain_community.embeddings import HuggingFaceEmbeddings
-import numpy as np
-from sklearn.cluster import AgglomerativeClustering
+
+def entity_resolution_use_bge() -> bool:
+    return os.getenv("ENTITY_RESOLUTION_USE_BGE", "false").lower() in ("1", "true", "yes")
 
 
 async def resolve_entities(triples: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -60,6 +61,12 @@ async def _build_entity_mapping(unique_entities: List[str]) -> Dict[str, str]:
         return {}
     if len(unique_entities) == 1:
         return {unique_entities[0]: unique_entities[0]}
+    if not entity_resolution_use_bge():
+        return {term: term for term in unique_entities}
+
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+    import numpy as np
+    from sklearn.cluster import AgglomerativeClustering
 
     embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-m3")
     try:

@@ -30,6 +30,7 @@ class PlatformStore:
         self.db_path = db_path or os.getenv("PLATFORM_DB", "data/platform.db")
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self._glossary_index_cache: Optional[Dict[str, str]] = None
         self._init_db()
 
     @contextmanager
@@ -496,16 +497,23 @@ class PlatformStore:
                     term.get("domain"), term.get("definition"), source, now, now,
                 ),
             )
+        self._invalidate_glossary_index()
         return tid
 
     def build_glossary_index(self) -> Dict[str, str]:
+        if self._glossary_index_cache is not None:
+            return self._glossary_index_cache
         index: Dict[str, str] = {}
         for term in self.iter_glossary():
             canonical = term["canonical"]
             index[canonical.lower()] = canonical
             for syn in term["synonyms_ru"] + term["synonyms_en"]:
                 index[syn.lower()] = canonical
+        self._glossary_index_cache = index
         return index
+
+    def _invalidate_glossary_index(self):
+        self._glossary_index_cache = None
 
     def seed_glossary_from_file(self, path: Path) -> int:
         if not path.exists():

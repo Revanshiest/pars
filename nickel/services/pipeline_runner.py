@@ -303,29 +303,33 @@ async def run_full_pipeline(
         except Exception as e:
             neo4j_stats = {"error": str(e)}
 
-    progress("qdrant", 0, 1, "Индексация в Qdrant")
-    qdrant_stats = {"chunks": 0, "entities": 0}
-    try:
-        indexer = QdrantIndexer()
-        chunk_meta = {
-            "document_kind": document_metadata.get("document_kind"),
-            "year": document_metadata.get("year"),
-            "author": document_metadata.get("author"),
-            "geography": document_metadata.get("geography"),
-        }
-        if chunks:
-            qdrant_stats["chunks"] = indexer.index_chunks(
-                chunks, job_id, basename, metadata=chunk_meta
+    qdrant_stats: Dict[str, Any] = {"chunks": 0, "entities": 0}
+    if os.getenv("INDEX_QDRANT_ON_IMPORT", "false").lower() in ("1", "true", "yes"):
+        progress("qdrant", 0, 1, "Индексация в Qdrant")
+        try:
+            indexer = QdrantIndexer()
+            chunk_meta = {
+                "document_kind": document_metadata.get("document_kind"),
+                "year": document_metadata.get("year"),
+                "author": document_metadata.get("author"),
+                "geography": document_metadata.get("geography"),
+            }
+            if chunks:
+                qdrant_stats["chunks"] = indexer.index_chunks(
+                    chunks, job_id, basename, metadata=chunk_meta
+                )
+            entities = {}
+            for t in triple_dicts:
+                entities[(t["subject"], t["subject_type"])] = {"name": t["subject"], "type": t["subject_type"]}
+                entities[(t["object"], t["object_type"])] = {"name": t["object"], "type": t["object_type"]}
+            qdrant_stats["entities"] = indexer.index_entities(
+                list(entities.values()), job_id, metadata=chunk_meta
             )
-        entities = {}
-        for t in triple_dicts:
-            entities[(t["subject"], t["subject_type"])] = {"name": t["subject"], "type": t["subject_type"]}
-            entities[(t["object"], t["object_type"])] = {"name": t["object"], "type": t["object_type"]}
-        qdrant_stats["entities"] = indexer.index_entities(
-            list(entities.values()), job_id, metadata=chunk_meta
-        )
-    except Exception as e:
-        qdrant_stats = {"error": str(e)}
+        except Exception as e:
+            qdrant_stats = {"error": str(e)}
+    else:
+        progress("qdrant", 1, 1, "Пропуск Qdrant (INDEX_QDRANT_ON_IMPORT=false)")
+        qdrant_stats = {"skipped": True, "reason": "INDEX_QDRANT_ON_IMPORT=false"}
 
     progress("done", 1, 1, "Готово")
     keywords = list({t["subject"] for t in triple_dicts[:20]} | {t["object"] for t in triple_dicts[:20]})

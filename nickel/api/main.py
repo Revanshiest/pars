@@ -412,7 +412,9 @@ async def semantic_search(req: SemanticSearchRequest, user=Depends(get_current_u
         raise HTTPException(503, "Vector search unavailable (Qdrant down). Graph/glossary may still work.")
     audit_action(user, "search.semantic", details={"query": req.query})
     from services.search_filters import filtered_search
-    result = filtered_search(
+    from services.search_runtime import run_search
+    result = await run_search(
+        filtered_search,
         req.query, limit=req.limit, entity_type=req.entity_type, job_id=req.job_id,
         role=user["role"],
     )
