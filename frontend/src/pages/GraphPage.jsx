@@ -102,14 +102,18 @@ export default function GraphPage() {
   const { auth } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const centerEntity = searchParams.get('entity') || searchParams.get('entity_name') || ''
+  const sourceDoc = searchParams.get('source') || ''
 
   const [, forceRender] = useState(0)
-  const [graphData, setGraphData] = useState({ nodes: [], edges: [] })
+  const [graphData, setGraphData] = useState({ nodes: [], edges: [], documents: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState(null)
   const [hovered, setHovered] = useState(null)
   const [search, setSearch] = useState('')
+  const [viewMode, setViewMode] = useState('canvas')
+  const [htmlBlobUrl, setHtmlBlobUrl] = useState(null)
+  const [htmlLoading, setHtmlLoading] = useState(false)
   const [xform, setXform] = useState({ x: 0, y: 0, s: 1 })
   const [isPan, setIsPan] = useState(false)
 
@@ -167,20 +171,53 @@ export default function GraphPage() {
     let cancelled = false
     setLoading(true)
     setError('')
-    api.getGraphView(auth, { limit: 200, entity_name: centerEntity || undefined })
+    api.getGraphView(auth, {
+      limit: 150,
+      entity_name: centerEntity || undefined,
+      source_document: sourceDoc || undefined,
+    })
       .then(data => { if (!cancelled) setGraphData(data) })
       .catch(e => { if (!cancelled) setError(e.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [auth, centerEntity])
+  }, [auth, centerEntity, sourceDoc])
 
   useEffect(() => {
-    if (!apiNodes.length) return
+    if (viewMode !== 'html') return undefined
+    let cancelled = false
+    setHtmlLoading(true)
+    setError('')
+    api.getGraphHtml(auth, {
+      limit: 500,
+      entity_name: centerEntity || undefined,
+      source_document: sourceDoc || undefined,
+    })
+      .then(html => {
+        if (cancelled) return
+        const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }))
+        setHtmlBlobUrl(prev => {
+          if (prev) URL.revokeObjectURL(prev)
+          return url
+        })
+      })
+      .catch(e => { if (!cancelled) setError(e.message) })
+      .finally(() => { if (!cancelled) setHtmlLoading(false) })
+    return () => {
+      cancelled = true
+      setHtmlBlobUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev)
+        return null
+      })
+    }
+  }, [auth, centerEntity, sourceDoc, viewMode])
+
+  useEffect(() => {
+    if (viewMode !== 'canvas' || !apiNodes.length) return
     nodesRef.current = initSimNodes(filteredNodes.length ? filteredNodes : apiNodes, filteredEdges.length ? filteredEdges : apiEdges)
     alphaRef.current = 1
     startSim(filteredEdges.length ? filteredEdges : apiEdges)
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
-  }, [apiNodes, apiEdges, filteredNodes, filteredEdges, startSim])
+  }, [viewMode, apiNodes, apiEdges, filteredNodes, filteredEdges, startSim])
 
   const fitToView = useCallback(() => {
     const rect = svgRef.current?.getBoundingClientRect()
@@ -291,11 +328,22 @@ export default function GraphPage() {
   const nodeById = useMemo(() => Object.fromEntries(apiNodes.map(n => [n.id, n])), [apiNodes])
 
   const applyCenter = (name) => {
-    if (name) setSearchParams({ entity: name })
-    else setSearchParams({})
+    const p = {}
+    if (name) p.entity = name
+    if (sourceDoc) p.source = sourceDoc
+    setSearchParams(p)
   }
 
-  if (loading) {
+  const applySource = (doc) => {
+    const p = {}
+    if (centerEntity) p.entity = centerEntity
+    if (doc) p.source = doc
+    setSearchParams(p)
+  }
+
+  const documents = graphData.documents || []
+
+  if (loading && viewMode === 'canvas') {
     return (
       <div className="flex items-center justify-center h-96 text-surface-400 gap-2">
         <Loader2 size={20} className="animate-spin-slow" />
@@ -326,6 +374,38 @@ export default function GraphPage() {
           )}
         </div>
 
+        <div className="card p-3 space-y-2">
+          <div className="label text-[10px]">Источник</div>
+          <select
+            className="input text-xs py-1.5"
+            value={sourceDoc}
+            onChange={e => applySource(e.target.value)}
+          >
+            <option value="">Все документы</option>
+            {documents.map(d => (
+              <option key={d.source_document} value={d.source_document}>
+                {d.source_document} ({d.facts})
+              </option>
+            ))}
+          </select>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              className={clsx('flex-1 text-xs py-1.5 rounded-lg border', viewMode === 'canvas' ? 'bg-brand-600 text-white border-brand-600' : 'border-surface-700')}
+              onClick={() => setViewMode('canvas')}
+            >
+              Обзор (SVG)
+            </button>
+            <button
+              type="button"
+              className={clsx('flex-1 text-xs py-1.5 rounded-lg border', viewMode === 'html' ? 'bg-brand-600 text-white border-brand-600' : 'border-surface-700')}
+              onClick={() => setViewMode('html')}
+            >
+              HTML (PyVis)
+            </button>
+          </div>
+        </div>
+
         <div className="card p-3">
           <div className="grid grid-cols-2 gap-2 mb-2">
             <div className="text-center bg-brand-50 rounded-xl py-2">
@@ -337,19 +417,43 @@ export default function GraphPage() {
               <div className="text-[10px] text-surface-400">связей</div>
             </div>
           </div>
-          <button type="button" onClick={reheat} className="btn-secondary w-full text-xs">
+          <p className="text-xs text-surface-400 mt-2">
+            Показано до 150 узлов. Уточните источник или центр подграфа для детализации.
+          </p>
+          <button type="button" onClick={reheat} className="btn-secondary w-full text-xs mt-2">
             <RotateCcw size={11} /> Пересчитать
           </button>
         </div>
       </div>
 
-      <div className="flex-1 card overflow-hidden relative" style={{ background: '#f7f4fd' }}>
+      <div className="flex-1 card overflow-hidden relative" style={{ background: viewMode === 'html' ? '#222' : '#f7f4fd' }}>
         {error && (
           <div className="absolute top-3 left-3 z-10 card p-2 text-xs text-red-500 border-red-200">{error}</div>
         )}
+
+        {viewMode === 'html' ? (
+          htmlLoading ? (
+            <div className="absolute inset-0 flex items-center justify-center text-surface-400 gap-2">
+              <Loader2 size={20} className="animate-spin-slow" />
+              Генерация HTML-графа…
+            </div>
+          ) : htmlBlobUrl ? (
+            <iframe
+              title="Knowledge graph"
+              src={htmlBlobUrl}
+              className="w-full h-full border-0"
+              sandbox="allow-scripts allow-same-origin"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-surface-400 text-sm">
+              Нет данных для визуализации
+            </div>
+          )
+        ) : (
+          <>
         {!apiNodes.length && !error && (
           <div className="absolute inset-0 flex items-center justify-center text-surface-400 text-sm">
-            Граф пуст. Загрузите документы для построения знаний.
+            Граф пуст. Загрузите документы или выберите источник «schlesinger».
           </div>
         )}
 
@@ -424,8 +528,11 @@ export default function GraphPage() {
             })}
           </g>
         </svg>
+          </>
+        )}
       </div>
 
+      {viewMode === 'canvas' && (
       <div className={clsx('shrink-0 transition-all duration-300 overflow-hidden', selected ? 'w-72' : 'w-0')}>
         {selNode && (
           <div className="card h-full overflow-auto" style={{ width: '288px' }}>
@@ -463,6 +570,7 @@ export default function GraphPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }

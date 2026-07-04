@@ -22,6 +22,7 @@ function SynonymList({ items, lang }) {
 export default function GlossaryPage() {
   const { auth, user } = useAuth()
   const [terms, setTerms] = useState([])
+  const [termsTotal, setTermsTotal] = useState(0)
   const [allDomains, setAllDomains] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -46,11 +47,13 @@ export default function GlossaryPage() {
     setLoading(true)
     setError('')
     try {
-      const params = {}
-      if (domain) params.domain = domain
-      if (search.trim()) params.q = search.trim()
-      const list = await api.listGlossary(auth, params)
-      setTerms(Array.isArray(list) ? list : [])
+      const res = await api.listGlossary(auth, {
+        domain: domain || undefined,
+        q: search.trim() || undefined,
+        limit: 200,
+      })
+      setTerms(Array.isArray(res?.terms) ? res.terms : (Array.isArray(res) ? res : []))
+      setTermsTotal(res?.total ?? (Array.isArray(res) ? res.length : 0))
     } catch (e) {
       setError(e.message)
     } finally {
@@ -59,10 +62,9 @@ export default function GlossaryPage() {
   }, [auth, domain, search])
 
   useEffect(() => {
-    api.listGlossary(auth).then(list => {
-      const doms = [...new Set((Array.isArray(list) ? list : []).map(t => t.domain).filter(Boolean))].sort()
-      setAllDomains(doms)
-    }).catch(() => {})
+    api.listGlossaryDomains(auth)
+      .then(res => setAllDomains(res.domains || []))
+      .catch(() => {})
   }, [auth])
 
   useEffect(() => {
@@ -217,7 +219,7 @@ export default function GlossaryPage() {
       <div className="card p-5">
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <h3 className="section-title text-sm flex-1">
-            Термины {loading ? '…' : `(${terms.length})`}
+            Термины {loading ? '…' : `(${terms.length}${termsTotal > terms.length ? ` из ${termsTotal}` : ''})`}
           </h3>
           <input
             className="input text-sm max-w-xs"

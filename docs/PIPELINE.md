@@ -12,6 +12,7 @@
 | Word | `.docx` | Ollama / Yandex |
 | Markdown / текст | `.md`, `.txt` | Ollama / Yandex |
 | Excel | `.xlsx`, `.xls` | excel_mapper (без LLM) |
+| JSON | `.json` | готовые triples или импорт глоссария (без LLM) |
 
 ---
 

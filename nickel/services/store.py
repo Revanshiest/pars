@@ -430,19 +430,51 @@ class PlatformStore:
                 ),
             )
 
-    def list_glossary(self, domain: Optional[str] = None, q: Optional[str] = None) -> List[Dict]:
+    def list_glossary(
+        self,
+        domain: Optional[str] = None,
+        q: Optional[str] = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> List[Dict]:
         sql = "SELECT * FROM glossary WHERE 1=1"
         params: list = []
         if domain:
             sql += " AND domain=?"
             params.append(domain)
         if q:
-            sql += " AND (canonical LIKE ? OR synonyms_ru LIKE ? OR synonyms_en LIKE ?)"
-            params.extend([f"%{q}%"] * 3)
-        sql += " ORDER BY canonical"
+            sql += " AND (canonical LIKE ? OR synonyms_ru LIKE ? OR synonyms_en LIKE ? OR definition LIKE ?)"
+            params.extend([f"%{q}%"] * 4)
+        sql += " ORDER BY canonical LIMIT ? OFFSET ?"
+        params.extend([max(1, min(limit, 1000)), max(0, offset)])
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
             return [self._glossary_row(r) for r in rows]
+
+    def iter_glossary(self) -> List[Dict]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM glossary ORDER BY canonical").fetchall()
+            return [self._glossary_row(r) for r in rows]
+
+    def list_glossary_domains(self) -> List[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT domain FROM glossary WHERE domain IS NOT NULL AND domain != '' ORDER BY domain"
+            ).fetchall()
+            return [r["domain"] for r in rows]
+
+    def count_glossary(self, domain: Optional[str] = None, q: Optional[str] = None) -> int:
+        sql = "SELECT COUNT(*) AS c FROM glossary WHERE 1=1"
+        params: list = []
+        if domain:
+            sql += " AND domain=?"
+            params.append(domain)
+        if q:
+            sql += " AND (canonical LIKE ? OR synonyms_ru LIKE ? OR synonyms_en LIKE ? OR definition LIKE ?)"
+            params.extend([f"%{q}%"] * 4)
+        with self._connect() as conn:
+            row = conn.execute(sql, params).fetchone()
+            return int(row["c"]) if row else 0
 
     def _glossary_row(self, row: sqlite3.Row) -> Dict:
         d = dict(row)
@@ -468,7 +500,7 @@ class PlatformStore:
 
     def build_glossary_index(self) -> Dict[str, str]:
         index: Dict[str, str] = {}
-        for term in self.list_glossary():
+        for term in self.iter_glossary():
             canonical = term["canonical"]
             index[canonical.lower()] = canonical
             for syn in term["synonyms_ru"] + term["synonyms_en"]:
@@ -481,7 +513,7 @@ class PlatformStore:
         with open(path, encoding="utf-8") as f:
             terms = json.load(f)
         count = 0
-        existing = {t["canonical"].lower() for t in self.list_glossary()}
+        existing = {t["canonical"].lower() for t in self.iter_glossary()}
         for term in terms:
             if term["canonical"].lower() not in existing:
                 self.add_glossary_term(term, source="seed")
@@ -917,21 +949,18 @@ class PlatformStore:
         if document_kind:
             sql += " AND json_extract(properties, '$.document_kind')=?"
             params.append(document_kind)
+        if query:
+            qpat = f"%{query.lower()}%"
+            sql += (
+                " AND (LOWER(subject) LIKE ? OR LOWER(object) LIKE ?"
+                " OR LOWER(relation) LIKE ? OR LOWER(COALESCE(source_document, '')) LIKE ?)"
+            )
+            params.extend([qpat, qpat, qpat, qpat])
         sql += " ORDER BY updated_at DESC LIMIT ?"
         params.append(limit)
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
-            facts = [self._fact_row(r) for r in rows]
-        if query:
-            q = query.lower()
-            facts = [
-                f for f in facts
-                if q in f["subject"].lower()
-                or q in f["object"].lower()
-                or q in f["relation"].lower()
-                or q in (f.get("source_document") or "").lower()
-            ]
-        return facts
+            return [self._fact_row(r) for r in rows]
 
     def _fact_row(self, row: sqlite3.Row) -> Dict:
         from services.verification import enrich_fact

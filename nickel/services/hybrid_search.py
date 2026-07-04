@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from services.glossary import expand_query_with_glossary
+from services.glossary import expand_query_with_glossary, glossary_use_bge
 from services.language_detect import detect_query_language, merge_search_results
 from services.neo4j_loader import Neo4jLoader
 from services.qdrant_index import QdrantIndexer
@@ -45,7 +45,7 @@ def hybrid_ranked_search(
     role: Optional[str] = None,
 ) -> Dict[str, Any]:
     lang = detect_query_language(query)
-    glossary = expand_query_with_glossary(query, use_bge=True)
+    glossary = expand_query_with_glossary(query, use_bge=glossary_use_bge())
     expanded = glossary["expanded"]
 
     meta_filters = {
@@ -57,24 +57,28 @@ def hybrid_ranked_search(
         "geography": geography,
     }
 
-    indexer = QdrantIndexer()
-    search_limit = min(limit * 3, 60)
-
-    chunks = indexer.search_chunks(
-        expanded, limit=search_limit, job_id=job_id, metadata_filters=meta_filters
-    )
-    if lang in ("en", "mixed"):
-        extra = indexer.search_chunks(
-            query, limit=search_limit, job_id=job_id, metadata_filters=meta_filters
-        )
-        chunks = merge_search_results(chunks, extra, key_fn=lambda x: x.get("chunk_id"), limit=search_limit)
-
-    entities = indexer.search_entities(expanded, entity_type=entity_type, limit=search_limit)
-    if lang in ("en", "mixed"):
-        extra_e = indexer.search_entities(query, entity_type=entity_type, limit=search_limit)
-        entities = merge_search_results(entities, extra_e, key_fn=lambda x: x.get("name"), limit=search_limit)
-
     store = get_store()
+    search_limit = min(limit * 3, 60)
+    chunks: List[Dict[str, Any]] = []
+    entities: List[Dict[str, Any]] = []
+
+    try:
+        indexer = QdrantIndexer()
+        chunks = indexer.search_chunks(
+            expanded, limit=search_limit, job_id=job_id, metadata_filters=meta_filters
+        )
+        if lang in ("en", "mixed"):
+            extra = indexer.search_chunks(
+                query, limit=search_limit, job_id=job_id, metadata_filters=meta_filters
+            )
+            chunks = merge_search_results(chunks, extra, key_fn=lambda x: x.get("chunk_id"), limit=search_limit)
+
+        entities = indexer.search_entities(expanded, entity_type=entity_type, limit=search_limit)
+        if lang in ("en", "mixed"):
+            extra_e = indexer.search_entities(query, entity_type=entity_type, limit=search_limit)
+            entities = merge_search_results(entities, extra_e, key_fn=lambda x: x.get("name"), limit=search_limit)
+    except Exception:
+        pass
     facts = store.list_facts(
         status=verification_status,
         geography=geography,
@@ -223,6 +227,5 @@ def hybrid_ranked_search(
     }
     if role:
         from services.access_control import filter_search_result
-        from services.store import get_store
-        return filter_search_result(payload, role, get_store().get_document_access_map())
+        return filter_search_result(payload, role, store.get_document_access_map())
     return payload

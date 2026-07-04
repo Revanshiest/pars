@@ -182,8 +182,17 @@ async def numeric_search(body: NumericSearchRequest, user=Depends(get_current_us
 @router.post("/glossary/lookup")
 async def glossary_semantic_lookup(body: GlossaryLookupRequest, user=Depends(get_current_user)):
     check_permission(user, "glossary_read")
-    from services.glossary import GlossaryMatcher
-    return {"text": body.text, "matches": GlossaryMatcher().semantic_lookup(body.text, top_k=body.top_k)}
+    from services.glossary import GlossaryMatcher, glossary_use_bge, text_glossary_lookup
+
+    matches = []
+    if glossary_use_bge():
+        try:
+            matches = GlossaryMatcher().semantic_lookup(body.text, top_k=body.top_k)
+        except Exception:
+            matches = []
+    if not matches:
+        matches = text_glossary_lookup(body.text, top_k=body.top_k)
+    return {"text": body.text, "matches": matches}
 
 
 @router.get("/glossary/expand")
@@ -194,10 +203,29 @@ async def glossary_expand(q: str, user=Depends(get_current_user)):
 
 
 @router.get("/glossary")
-async def list_glossary(domain: Optional[str] = None, q: Optional[str] = None, user=Depends(get_current_user)):
+async def list_glossary(
+    domain: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = 200,
+    offset: int = 0,
+    user=Depends(get_current_user),
+):
     check_permission(user, "glossary_read")
     audit_action(user, "glossary.list", ip="")
-    return get_store().list_glossary(domain=domain, q=q)
+    store = get_store()
+    terms = store.list_glossary(domain=domain, q=q, limit=limit, offset=offset)
+    return {
+        "terms": terms,
+        "total": store.count_glossary(domain=domain, q=q),
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/glossary/domains")
+async def list_glossary_domains(user=Depends(get_current_user)):
+    check_permission(user, "glossary_read")
+    return {"domains": get_store().list_glossary_domains()}
 
 
 @router.post("/glossary")
@@ -227,7 +255,10 @@ async def search_hybrid(body: FilteredSearchRequest, user=Depends(get_current_us
     check_permission(user, "search")
     from services.hybrid_search import hybrid_ranked_search
     audit_action(user, "search.hybrid", details={"query": body.query})
-    return hybrid_ranked_search(**body.model_dump(), role=user["role"])
+    try:
+        return hybrid_ranked_search(**body.model_dump(), role=user["role"])
+    except Exception as exc:
+        raise HTTPException(503, f"Search unavailable: {exc}") from exc
 
 
 @router.get("/facts/{fact_id}")
@@ -414,6 +445,59 @@ async def download_export(topic: str, format: str = "md", user=Depends(get_curre
     if format == "jsonld":
         return Response(export_jsonld(topic), media_type="application/ld+json")
     return Response(export_markdown(topic), media_type="text/markdown")
+
+
+@router.get("/graph/view")
+async def graph_view(
+    limit: int = 150,
+    entity_name: Optional[str] = None,
+    source_document: Optional[str] = None,
+    user=Depends(get_current_user),
+):
+    """Данные графа из SQLite для HTML-визуализации во frontend (без Neo4j Browser)."""
+    check_permission(user, "read")
+    from services.graph_view import load_graph_view
+
+    audit_action(user, "graph.view", details={"entity": entity_name, "source": source_document})
+    return load_graph_view(
+        entity_name=entity_name,
+        source_document=source_document,
+        limit=min(max(limit, 1), 2000),
+        role=user.get("role"),
+    )
+
+
+@router.get("/graph/html")
+async def graph_html(
+    source_document: Optional[str] = None,
+    entity_name: Optional[str] = None,
+    limit: int = 500,
+    user=Depends(get_current_user),
+):
+    """Полноэкранный интерактивный HTML-граф (PyVis) из SQLite."""
+    check_permission(user, "read")
+    from services.graph_view import facts_as_triples
+    from visualizer import render_triples_html
+
+    store = get_store()
+    fetch_limit = min(max(limit * 2, limit), 15000)
+    facts = store.list_facts(
+        source_document=source_document,
+        role=user.get("role"),
+        limit=fetch_limit,
+    )
+    triples = facts_as_triples(facts)
+    if entity_name:
+        needle = entity_name.strip().lower()
+        triples = [
+            t for t in triples
+            if needle in t["subject"].lower() or needle in t["object"].lower()
+        ]
+    triples = triples[: min(max(limit, 1), 10000)]
+    title = source_document or entity_name or "Nickel Knowledge Graph"
+    html = render_triples_html(triples, title=title)
+    audit_action(user, "graph.html", details={"source": source_document, "triples": len(triples)})
+    return Response(html, media_type="text/html; charset=utf-8")
 
 
 @router.post("/graph/triples")

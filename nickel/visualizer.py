@@ -35,7 +35,18 @@ def generate_html(filepath: str, output_dir: str):
         print("В файле нет троек. Визуализировать нечего.")
         return
 
-    # Создаем граф NetworkX
+    os.makedirs(output_dir, exist_ok=True)
+    base_name = os.path.basename(filepath)
+    out_file = os.path.join(output_dir, f"{os.path.splitext(base_name)[0]}_visualization.html")
+    html = render_triples_html(triples, title=os.path.splitext(base_name)[0])
+    with open(out_file, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"✅ Граф успешно сохранен в {out_file}")
+    print(f"Откройте {out_file} в любом веб-браузере.")
+
+
+def render_triples_html(triples: list, title: str = "Knowledge Graph") -> str:
+    """Интерактивный HTML (PyVis) из списка triples."""
     G = nx.DiGraph()
 
     for t in triples:
@@ -44,18 +55,16 @@ def generate_html(filepath: str, output_dir: str):
         rel = t.get("relation")
         obj = t.get("object")
         obj_type = t.get("object_type", "Unknown")
-        props = t.get("properties", {})
+        props = dict(t.get("properties") or {})
 
         if not subj or not obj:
             continue
 
-        # Добавляем узлы
         if subj not in G:
             G.add_node(subj, group=subj_type, color=COLOR_MAP.get(subj_type, COLOR_MAP["Unknown"]), title=f"Type: {subj_type}")
         if obj not in G:
             G.add_node(obj, group=obj_type, color=COLOR_MAP.get(obj_type, COLOR_MAP["Unknown"]), title=f"Type: {obj_type}")
 
-        # Формируем tooltip для связи (показываем свойства при наведении)
         edge_title = f"Relation: {rel}"
         if props:
             edge_title += "\n\n"
@@ -72,41 +81,27 @@ def generate_html(filepath: str, output_dir: str):
                 for k, v in props.items():
                     edge_title += f"- {k}: {v}\n"
                     
-            # Восстанавливаем свойства обратно, если они нужны дальше (хотя мы их просто выводим)
-            if desc: props["description"] = desc
-            if origin: props["practice_origin"] = origin
+            if desc:
+                props["description"] = desc
+            if origin:
+                props["practice_origin"] = origin
 
-        # Добавляем ребро
         G.add_edge(subj, obj, title=edge_title, label=rel)
 
-    # Инициализация PyVis Network
-    net = Network(height="1000px", width="100%", directed=True, bgcolor="#222222", font_color="white")
-    
-    # Загружаем данные из NetworkX
+    net = Network(height="100vh", width="100%", directed=True, bgcolor="#222222", font_color="white")
     net.from_nx(G)
-
-    # Настраиваем физику (алгоритм Barnes Hut отлично подходит для графов знаний)
     net.set_options("""
     var options = {
       "nodes": {
         "shape": "dot",
         "size": 20,
-        "font": {
-          "size": 14,
-          "color": "#ffffff"
-        },
+        "font": { "size": 14, "color": "#ffffff" },
         "borderWidth": 2
       },
       "edges": {
-        "color": {
-          "inherit": true
-        },
+        "color": { "inherit": true },
         "smooth": false,
-        "font": {
-            "size": 12,
-            "color": "#cccccc",
-            "align": "middle"
-        }
+        "font": { "size": 12, "color": "#cccccc", "align": "middle" }
       },
       "physics": {
         "barnesHut": {
@@ -121,15 +116,10 @@ def generate_html(filepath: str, output_dir: str):
       }
     }
     """)
-
-    # Сохраняем результат
-    os.makedirs(output_dir, exist_ok=True)
-    base_name = os.path.basename(filepath)
-    out_file = os.path.join(output_dir, f"{os.path.splitext(base_name)[0]}_visualization.html")
-    
-    net.save_graph(out_file)
-    print(f"✅ Граф успешно сохранен в {out_file}")
-    print(f"Откройте {out_file} в любом веб-браузере.")
+    html = net.generate_html()
+    if "<title>" in html:
+        html = html.replace("<title>pyvis</title>", f"<title>{title}</title>", 1)
+    return html
 
 if __name__ == "__main__":
     import argparse

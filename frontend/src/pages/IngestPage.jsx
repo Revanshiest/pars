@@ -1,20 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Upload, FolderOpen, Play, Loader2, CheckCircle, Clock, AlertCircle,
-  ChevronDown, ChevronRight, FileText, RefreshCw, Terminal, FileJson, Link2,
+  ChevronDown, ChevronRight, FileText, RefreshCw, Terminal,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useAuth } from '../context/AuthContext'
-import { useJobs } from '../context/JobsContext'
 import { api } from '../api/client'
-
-const JOB_TYPE_LABELS = {
-  batch: { label: 'Пакет LLM', className: 'bg-brand-100 text-brand-700 border-brand-200' },
-  batch_pairs: { label: 'Пакет пар', className: 'bg-violet-100 text-violet-700 border-violet-200' },
-  import_pair: { label: 'Doc + JSON', className: 'bg-violet-100 text-violet-700 border-violet-200' },
-}
 
 const STATUS = {
   completed: { label: 'Готово', icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
@@ -24,8 +17,7 @@ const STATUS = {
 }
 
 function pct(job) {
-  const isBatch = job.job_type === 'batch' || job.job_type === 'batch_pairs'
-  if (isBatch && job.files_total > 0) {
+  if (job.job_type === 'batch' && job.files_total > 0) {
     return Math.round(((job.files_done + job.files_failed) / job.files_total) * 100)
   }
   if (job.progress_total > 0) {
@@ -52,7 +44,8 @@ function LogPanel({ auth, jobId }) {
         if (cancelled || !batch.length) return
         setLogs(prev => {
           const ids = new Set(prev.map(l => l.id))
-          return [...prev, ...batch.filter(l => !ids.has(l.id))].slice(-500)
+          const merged = [...prev, ...batch.filter(l => !ids.has(l.id))]
+          return merged.slice(-500)
         })
         sinceRef.current = batch[batch.length - 1].id
       } catch { /* ignore */ }
@@ -74,7 +67,9 @@ function LogPanel({ auth, jobId }) {
         <span className="ml-auto">{logs.length} записей</span>
       </div>
       <div className="max-h-64 overflow-y-auto p-3 font-mono text-[11px] leading-relaxed space-y-0.5">
-        {logs.length === 0 && <div className="text-surface-400">Ожидание логов…</div>}
+        {logs.length === 0 && (
+          <div className="text-surface-400">Ожидание логов…</div>
+        )}
         {logs.map(line => (
           <div key={line.id} className={clsx('log-line-' + (line.level || 'info'))}>
             <span className="text-surface-500 select-none">
@@ -94,32 +89,31 @@ function JobRow({ job, auth, expanded, onToggle, onRefresh }) {
   const cfg = STATUS[job.status] || STATUS.pending
   const Icon = cfg.icon
   const progress = pct(job)
-  const isBatch = job.job_type === 'batch' || job.job_type === 'batch_pairs'
-  const typeBadge = JOB_TYPE_LABELS[job.job_type]
+  const isBatch = job.job_type === 'batch'
 
   return (
     <div className={clsx('card border transition-all', cfg.bg)}>
-      <button type="button" onClick={onToggle} className="w-full flex items-start gap-3 p-4 text-left">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-start gap-3 p-4 text-left"
+      >
         <div className="mt-0.5">
-          {expanded
-            ? <ChevronDown size={16} className="text-surface-400" />
-            : <ChevronRight size={16} className="text-surface-400" />}
+          {expanded ? <ChevronDown size={16} className="text-surface-400" /> : <ChevronRight size={16} className="text-surface-400" />}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            {isBatch
-              ? <FolderOpen size={14} className="text-brand-600 shrink-0" />
-              : <FileText size={14} className="text-surface-400 shrink-0" />}
+            {isBatch ? <FolderOpen size={14} className="text-brand-600 shrink-0" /> : <FileText size={14} className="text-surface-400 shrink-0" />}
             <span className="text-sm font-semibold text-surface-100 truncate">{job.filename}</span>
-            {typeBadge && (
-              <span className={clsx('badge border', typeBadge.className)}>{typeBadge.label}</span>
+            {isBatch && (
+              <span className="badge bg-brand-100 text-brand-700 border border-brand-200">Пакет</span>
             )}
           </div>
           <div className="text-xs text-surface-400 mt-1 flex flex-wrap gap-x-2">
             <span>{format(new Date(job.created_at), 'dd MMM yyyy HH:mm', { locale: ru })}</span>
             {job.created_by && <span>· {job.created_by}</span>}
             {isBatch && (
-              <span>· {job.files_done}/{job.files_total}
+              <span>· {job.files_done}/{job.files_total} файлов
                 {job.files_failed > 0 && <span className="text-red-500"> ({job.files_failed} ошибок)</span>}
               </span>
             )}
@@ -140,167 +134,106 @@ function JobRow({ job, auth, expanded, onToggle, onRefresh }) {
 
       {expanded && (
         <div className="px-4 pb-4 border-t border-surface-700/50">
-          {job.folder_path && <p className="text-xs text-surface-400 mt-3 font-mono">{job.folder_path}</p>}
-          {job.error && <p className="text-sm text-red-500 mt-2">{job.error}</p>}
-          {job.stage && <p className="text-xs text-surface-400 mt-2">Этап: <strong>{job.stage}</strong></p>}
+          {job.folder_path && (
+            <p className="text-xs text-surface-400 mt-3 font-mono">{job.folder_path}</p>
+          )}
+          {job.error && (
+            <p className="text-sm text-red-500 mt-2">{job.error}</p>
+          )}
+          {job.stage && (
+            <p className="text-xs text-surface-400 mt-2">Этап: <strong>{job.stage}</strong></p>
+          )}
           <LogPanel auth={auth} jobId={job.id} />
-          <button type="button" className="btn-ghost text-xs mt-2" onClick={onRefresh}>
-            <RefreshCw size={12} /> Обновить статус
-          </button>
+          <div className="mt-2 flex gap-2">
+            <button type="button" className="btn-ghost text-xs" onClick={onRefresh}>
+              <RefreshCw size={12} /> Обновить статус
+            </button>
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function ScenarioHeader({ n, title, desc }) {
-  return (
-    <div className="mb-3">
-      <h3 className="section-title text-sm flex items-center gap-2">
-        <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center">{n}</span>
-        {title}
-      </h3>
-      {desc && <p className="text-xs text-surface-400 mt-1 ml-8">{desc}</p>}
-    </div>
-  )
-}
-
 export default function IngestPage() {
   const { auth, user } = useAuth()
-  const { jobs, expanded, expandJob, toggleExpanded, refreshJobs, error: jobsError } = useJobs()
+  const [jobs, setJobs] = useState([])
   const [folders, setFolders] = useState([])
   const [folderPath, setFolderPath] = useState('data/inbox')
-  const [folderMode, setFolderMode] = useState('full')
-  const [folderFiles, setFolderFiles] = useState([])
-  const [folderName, setFolderName] = useState('')
   const [extractor, setExtractor] = useState('auto')
   const [recursive, setRecursive] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [expanded, setExpanded] = useState({})
+  const [uploading, setUploading] = useState(false)
+  const [uploadMsg, setUploadMsg] = useState('')
   const [error, setError] = useState('')
   const [showAll, setShowAll] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
-  const [pairDoc, setPairDoc] = useState(null)
-  const [pairJson, setPairJson] = useState(null)
-
   const fileRef = useRef(null)
-  const folderRef = useRef(null)
-  const pairsRef = useRef(null)
-  const pairDocRef = useRef(null)
-  const pairJsonRef = useRef(null)
+
+  const loadJobs = useCallback(async () => {
+    try {
+      const list = await api.listJobs(auth, { active: !showAll, limit: 100 })
+      setJobs(list)
+    } catch (e) {
+      setError(e.message)
+    }
+  }, [auth, showAll])
 
   const loadFolders = useCallback(async () => {
     try {
       const res = await api.listFolders(auth)
       setFolders(res.folders || [])
+      if (res.folders?.length && !folderPath) {
+        setFolderPath(res.folders[0].path)
+      }
     } catch { /* optional */ }
-  }, [auth])
+  }, [auth, folderPath])
 
   useEffect(() => {
+    loadJobs()
     loadFolders()
-  }, [loadFolders])
-
-  const visibleJobs = showAll
-    ? jobs
-    : jobs.filter(j => j.status === 'running' || j.status === 'pending' || expanded[j.id])
-
-  const onFolderPick = (fileList) => {
-    const files = [...fileList]
-    setFolderFiles(files)
-    const first = files[0]
-    const rel = first?.webkitRelativePath || first?.name || ''
-    const root = rel.includes('/') ? rel.split('/')[0] : rel || 'папка'
-    setFolderName(root)
-  }
-
-  const uploadFolder = async () => {
-    if (!folderFiles.length) {
-      setError('Выберите папку')
-      return
-    }
-    setLoading(true)
-    setError('')
-    try {
-      const job = await api.uploadFolder(
-        auth,
-        folderFiles,
-        folderMode,
-        folderMode === 'full' && extractor !== 'auto' ? extractor : undefined,
-      )
-      expandJob(job.id)
-      await refreshJobs()
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
-  }
+    const t = setInterval(loadJobs, 3000)
+    return () => clearInterval(t)
+  }, [loadJobs, loadFolders])
 
   const startFolder = async () => {
-    setLoading(true)
+    setUploading(true)
     setError('')
+    setUploadMsg('')
     try {
-      const job = await api.ingestFolder(
-        auth, folderPath,
-        folderMode === 'full' && extractor !== 'auto' ? extractor : undefined,
-        recursive,
-        folderMode,
-      )
-      expandJob(job.id)
-      await refreshJobs()
+      const job = await api.ingestFolder(auth, folderPath, extractor, recursive)
+      setExpanded(prev => ({ ...prev, [job.id]: true }))
+      await loadJobs()
     } catch (e) {
       setError(e.message)
     } finally {
-      setLoading(false)
+      setUploading(false)
     }
   }
 
-  const uploadFiles = async (files) => {
-    setLoading(true)
+  const uploadFiles = async (fileList) => {
+    const files = [...fileList].filter(f => f?.name)
+    if (!files.length) return
+    setUploading(true)
     setError('')
+    setUploadMsg('')
+    let ok = 0
+    let failed = 0
     try {
       for (const file of files) {
-        const job = await api.uploadFile(auth, file, extractor !== 'auto' ? extractor : undefined)
-        expandJob(job.id)
+        try {
+          const job = await api.uploadFile(auth, file, extractor !== 'auto' ? extractor : undefined)
+          setExpanded(prev => ({ ...prev, [job.id]: true }))
+          ok += 1
+        } catch (e) {
+          failed += 1
+          setError(prev => prev ? `${prev}; ${file.name}: ${e.message}` : `${file.name}: ${e.message}`)
+        }
       }
-      await refreshJobs()
-    } catch (e) {
-      setError(e.message)
+      if (ok) setUploadMsg(`Загружено файлов: ${ok}${failed ? `, ошибок: ${failed}` : ''}`)
+      await loadJobs()
     } finally {
-      setLoading(false)
-    }
-  }
-
-  const submitPair = async () => {
-    if (!pairDoc || !pairJson) {
-      setError('Выберите документ и JSON')
-      return
-    }
-    setLoading(true)
-    setError('')
-    try {
-      const job = await api.importPair(auth, pairDoc, pairJson)
-      expandJob(job.id)
-      setPairDoc(null)
-      setPairJson(null)
-      await refreshJobs()
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const uploadPairsBatch = async (files) => {
-    setLoading(true)
-    setError('')
-    try {
-      const job = await api.importPairs(auth, files)
-      expandJob(job.id)
-      await refreshJobs()
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
     }
   }
 
@@ -309,6 +242,7 @@ export default function IngestPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Активных', value: active.length, color: 'text-brand-600' },
@@ -324,212 +258,111 @@ export default function IngestPage() {
       </div>
 
       {canUpload && (
-        <div className="space-y-5">
-          {/* 1 — один документ, полный пайплайн */}
-          <div className="card p-5">
-            <ScenarioHeader
-              n={1}
-              title="Один документ — полная обработка"
-              desc="LLM извлекает тройки → SQLite + Neo4j + эмбеддинги в Qdrant"
-            />
-            <div
-              className="border-2 border-dashed border-surface-700 rounded-xl p-6 text-center hover:border-brand-300 hover:bg-brand-50/40 transition-all cursor-pointer"
-              onClick={() => fileRef.current?.click()}
-              onDragOver={e => e.preventDefault()}
-              onDrop={e => { e.preventDefault(); uploadFiles([...e.dataTransfer.files]) }}
-            >
-              <input ref={fileRef} type="file" multiple accept=".pdf,.md,.txt,.docx,.xlsx,.xls" className="hidden"
-                onChange={e => uploadFiles([...e.target.files])} />
-              <Upload size={22} className="mx-auto text-brand-500 mb-2" />
-              <p className="text-sm font-medium">PDF, DOCX, MD, TXT, XLSX</p>
-            </div>
-            <div className="mt-3 max-w-xs">
-              <label className="label mb-1 block text-xs">Экстрактор</label>
-              <select className="input text-sm" value={extractor} onChange={e => setExtractor(e.target.value)}>
-                <option value="auto">auto</option>
-                <option value="ollama">ollama</option>
-                <option value="yandex">yandex</option>
-              </select>
-            </div>
-          </div>
-
-          {/* 2 — папка из браузера */}
+        <>
+          {/* Folder ingest */}
           <div className="card p-5 space-y-4">
-            <ScenarioHeader
-              n={2}
-              title="Папка — пакетная обработка"
-              desc="Выберите папку на компьютере. Режим «пары» — report.pdf + report_extracted.json"
-            />
-            <div
-              className="border-2 border-dashed border-surface-700 rounded-xl p-6 text-center hover:border-brand-300 hover:bg-brand-50/40 transition-all cursor-pointer"
-              onClick={() => folderRef.current?.click()}
-            >
-              <input
-                ref={folderRef}
-                type="file"
-                webkitdirectory=""
-                directory=""
-                multiple
-                className="hidden"
-                onChange={e => onFolderPick(e.target.files || [])}
-              />
-              <FolderOpen size={22} className="mx-auto text-brand-500 mb-2" />
-              <p className="text-sm font-medium">
-                {folderName ? folderName : 'Выберите папку…'}
-              </p>
-              {folderFiles.length > 0 && (
-                <p className="text-xs text-surface-400 mt-1">{folderFiles.length} файлов</p>
-              )}
-            </div>
+            <h3 className="section-title text-sm flex items-center gap-2">
+              <FolderOpen size={16} className="text-brand-600" />
+              Обработка папки на сервере
+            </h3>
+            <p className="text-xs text-surface-400">
+              Укажите путь внутри <code className="font-mono bg-surface-900 px-1 rounded">data/inbox</code> или{' '}
+              <code className="font-mono bg-surface-900 px-1 rounded">data/uploads</code>.
+              Все пользователи видят прогресс и логи активных задач.
+            </p>
             <div className="grid md:grid-cols-2 gap-4">
               <div>
-                <label className="label mb-1.5 block">Режим</label>
-                <select className="input text-sm" value={folderMode} onChange={e => setFolderMode(e.target.value)}>
-                  <option value="full">Полный LLM-пайплайн</option>
-                  <option value="import_pairs">Doc + JSON (готовые тройки)</option>
+                <label className="label mb-1.5 block">Путь к папке</label>
+                <input className="input font-mono text-sm" value={folderPath} onChange={e => setFolderPath(e.target.value)} list="folder-list" />
+                <datalist id="folder-list">
+                  {folders.map(f => (
+                    <option key={f.path} value={f.path}>{f.name}</option>
+                  ))}
+                </datalist>
+              </div>
+              <div>
+                <label className="label mb-1.5 block">Экстрактор</label>
+                <select className="input text-sm" value={extractor} onChange={e => setExtractor(e.target.value)}>
+                  <option value="auto">auto</option>
+                  <option value="ollama">ollama</option>
+                  <option value="yandex">yandex</option>
                 </select>
               </div>
-              {folderMode === 'full' && (
-                <div>
-                  <label className="label mb-1.5 block">Экстрактор</label>
-                  <select className="input text-sm" value={extractor} onChange={e => setExtractor(e.target.value)}>
-                    <option value="auto">auto</option>
-                    <option value="ollama">ollama</option>
-                    <option value="yandex">yandex</option>
-                  </select>
-                </div>
-              )}
             </div>
-            <button type="button" className="btn-primary" onClick={uploadFolder} disabled={loading || !folderFiles.length}>
-              {loading ? <Loader2 size={14} className="animate-spin-slow" /> : <Play size={14} />}
-              Загрузить и запустить
-            </button>
-
-            <div className="border-t border-surface-700 pt-3">
-              <button
-                type="button"
-                className="btn-ghost text-xs"
-                onClick={() => setShowAdvanced(v => !v)}
-              >
-                {showAdvanced ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                Расширенно: путь на сервере
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="flex items-center gap-2 text-sm text-surface-300 cursor-pointer">
+                <input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)} className="rounded" />
+                Рекурсивно (подпапки)
+              </label>
+              <button type="button" className="btn-primary" onClick={startFolder} disabled={uploading || !folderPath}>
+                {uploading ? <Loader2 size={14} className="animate-spin-slow" /> : <Play size={14} />}
+                Запустить обработку папки
               </button>
-              {showAdvanced && (
-                <div className="mt-3 space-y-3">
-                  <div>
-                    <label className="label mb-1.5 block">Путь к папке на сервере</label>
-                    <input className="input font-mono text-sm" value={folderPath} onChange={e => setFolderPath(e.target.value)} list="folder-list" />
-                    <datalist id="folder-list">
-                      {folders.map(f => <option key={f.path} value={f.path}>{f.name}</option>)}
-                    </datalist>
-                  </div>
-                  <label className="flex items-center gap-2 text-sm text-surface-300 cursor-pointer">
-                    <input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)} className="rounded" />
-                    Рекурсивно
-                  </label>
-                  <button type="button" className="btn-secondary text-xs" onClick={startFolder} disabled={loading || !folderPath}>
-                    Запустить на сервере
-                  </button>
-                </div>
-              )}
             </div>
           </div>
 
-          {/* 3 — одна пара doc + json */}
-          <div className="card p-5 space-y-4">
-            <ScenarioHeader
-              n={3}
-              title="Одна пара: документ + JSON"
-              desc="JSON → БД (тройки, Neo4j). Документ → только эмбеддинги в Qdrant"
-            />
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="label mb-1.5 block">Документ (PDF/DOCX/MD/TXT)</label>
-                <button type="button" className="input w-full text-left text-sm truncate" onClick={() => pairDocRef.current?.click()}>
-                  {pairDoc?.name || 'Выбрать файл…'}
-                </button>
-                <input ref={pairDocRef} type="file" accept=".pdf,.md,.txt,.docx" className="hidden"
-                  onChange={e => setPairDoc(e.target.files?.[0] || null)} />
-              </div>
-              <div>
-                <label className="label mb-1.5 block">JSON с triples</label>
-                <button type="button" className="input w-full text-left text-sm truncate" onClick={() => pairJsonRef.current?.click()}>
-                  {pairJson?.name || 'Выбрать файл…'}
-                </button>
-                <input ref={pairJsonRef} type="file" accept=".json,application/json" className="hidden"
-                  onChange={e => setPairJson(e.target.files?.[0] || null)} />
-              </div>
+          {/* File upload */}
+          <div
+            className={clsx(
+              'border-2 border-dashed border-surface-700 rounded-2xl p-8 text-center transition-all',
+              uploading ? 'opacity-60 pointer-events-none' : 'hover:border-brand-300 hover:bg-brand-50/40 cursor-pointer',
+            )}
+            onClick={() => !uploading && fileRef.current?.click()}
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => { e.preventDefault(); if (!uploading) uploadFiles([...e.dataTransfer.files]) }}
+          >
+            <input ref={fileRef} type="file" multiple accept=".pdf,.md,.txt,.docx,.xlsx,.xls,.json" className="hidden"
+              onChange={e => uploadFiles([...e.target.files])} />
+            <div className="w-14 h-14 mx-auto bg-brand-50 border border-brand-100 rounded-2xl flex items-center justify-center mb-3">
+              {uploading ? <Loader2 size={24} className="text-brand-500 animate-spin-slow" /> : <Upload size={24} className="text-brand-500" />}
             </div>
-            <p className="text-xs text-surface-400">
-              Имена должны совпадать: <code className="font-mono">report.pdf</code> +{' '}
-              <code className="font-mono">report_extracted.json</code>
+            <p className="text-sm font-semibold text-surface-200">
+              {uploading ? 'Загрузка…' : 'Загрузить файлы'}
             </p>
-            <button type="button" className="btn-primary" onClick={submitPair} disabled={loading || !pairDoc || !pairJson}>
-              {loading ? <Loader2 size={14} className="animate-spin-slow" /> : <Link2 size={14} />}
-              Загрузить пару
-            </button>
+            <p className="text-xs text-surface-400 mt-1">PDF, DOCX, MD, TXT, XLSX, JSON (triples или глоссарий)</p>
           </div>
-
-          {/* 4 — много пар через upload */}
-          <div className="card p-5">
-            <ScenarioHeader
-              n={4}
-              title="Много пар: документы + JSON"
-              desc="Загрузите все файлы сразу — пары сопоставятся автоматически по имени"
-            />
-            <div
-              className="border-2 border-dashed border-violet-200 rounded-xl p-6 text-center hover:border-violet-400 hover:bg-violet-50/30 transition-all cursor-pointer"
-              onClick={() => pairsRef.current?.click()}
-              onDragOver={e => e.preventDefault()}
-              onDrop={e => { e.preventDefault(); uploadPairsBatch([...e.dataTransfer.files]) }}
-            >
-              <input ref={pairsRef} type="file" multiple
-                accept=".pdf,.md,.txt,.docx,.json,application/json" className="hidden"
-                onChange={e => uploadPairsBatch([...e.target.files])} />
-              <FileJson size={22} className="mx-auto text-violet-500 mb-2" />
-              <p className="text-sm font-medium">Перетащите doc + json файлы</p>
-              <p className="text-xs text-surface-400 mt-1">report.pdf, report_extracted.json, paper.docx, paper.json …</p>
-            </div>
-          </div>
-        </div>
+        </>
       )}
 
-      {jobsError && (
-        <div className="card p-4 border-amber-200 bg-amber-50 text-amber-700 text-sm">{jobsError}</div>
+      {uploadMsg && (
+        <div className="card p-4 border-emerald-200 bg-emerald-50 text-emerald-700 text-sm">{uploadMsg}</div>
       )}
 
       {error && (
         <div className="card p-4 border-red-200 bg-red-50 text-red-600 text-sm">{error}</div>
       )}
 
+      {/* Jobs list */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="section-title text-sm">{showAll ? 'Все задачи' : 'Активные работы'}</h3>
+          <h3 className="section-title text-sm">
+            {showAll ? 'Все задачи' : 'Активные работы'}
+          </h3>
           <div className="flex gap-2">
             <button type="button" className="btn-secondary text-xs" onClick={() => setShowAll(v => !v)}>
               {showAll ? 'Только активные' : 'Показать все'}
             </button>
-            <button type="button" className="btn-ghost text-xs" onClick={refreshJobs}>
+            <button type="button" className="btn-ghost text-xs" onClick={loadJobs}>
               <RefreshCw size={13} /> Обновить
             </button>
           </div>
         </div>
 
-        {visibleJobs.length === 0 && (
+        {jobs.length === 0 && (
           <div className="card p-8 text-center text-surface-400 text-sm">
-            Нет задач. Выберите один из сценариев выше.
+            Нет {showAll ? '' : 'активных '}задач. Запустите обработку папки или загрузите файлы.
           </div>
         )}
 
         <div className="space-y-2">
-          {visibleJobs.map(job => (
+          {jobs.map(job => (
             <JobRow
               key={job.id}
               job={job}
               auth={auth}
               expanded={!!expanded[job.id]}
-              onToggle={() => toggleExpanded(job.id)}
-              onRefresh={refreshJobs}
+              onToggle={() => setExpanded(prev => ({ ...prev, [job.id]: !prev[job.id] }))}
+              onRefresh={loadJobs}
             />
           ))}
         </div>

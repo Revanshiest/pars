@@ -109,6 +109,11 @@ export default function SearchPage() {
               </p>
             )}
           </div>
+          {(results.ranked_results || []).length === 0 && (
+            <div className="card p-6 text-center text-surface-400 text-sm">
+              Ничего не найдено. Попробуйте другой запрос или проверьте, что данные импортированы.
+            </div>
+          )}
           {(results.ranked_results || []).slice(0, 20).map((r, i) => (
             <ResultCard key={`${r.result_type}-${r.id}-${i}`} item={r} />
           ))}

@@ -51,7 +51,7 @@ class GlossaryMatcher:
 
     def _build_entries(self) -> List[Dict[str, Any]]:
         entries = []
-        for term in get_store().list_glossary():
+        for term in get_store().iter_glossary():
             forms = [term["canonical"]] + term["synonyms_ru"] + term["synonyms_en"]
             for form in forms:
                 entries.append({
@@ -201,6 +201,44 @@ def normalize_triples(
     return triples, stats
 
 
+def text_glossary_lookup(text: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    """Быстрый текстовый поиск по глоссарию (без BGE)."""
+    needle = text.strip().lower()
+    if len(needle) < 2:
+        return []
+    results: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for term in get_store().list_glossary(q=text, limit=100):
+        forms = [term["canonical"]] + term["synonyms_ru"] + term["synonyms_en"]
+        best_form = None
+        best_score = 0.0
+        for form in forms:
+            fl = form.lower()
+            if fl == needle:
+                score = 1.0
+            elif needle in fl or fl in needle:
+                score = 0.85
+            elif any(part in fl for part in needle.split() if len(part) > 2):
+                score = 0.75
+            else:
+                continue
+            if score > best_score:
+                best_score = score
+                best_form = form
+        if best_form and term["canonical"] not in seen:
+            seen.add(term["canonical"])
+            results.append({
+                "canonical": term["canonical"],
+                "matched_form": best_form,
+                "score": round(best_score, 3),
+                "lang": "ru" if re.search(r"[а-яё]", best_form, re.I) else "en",
+            })
+        if len(results) >= top_k:
+            break
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results[:top_k]
+
+
 def expand_query_with_glossary(query: str, use_bge: bool = True) -> Dict[str, Any]:
     """Exact + BGE расширение запроса синонимами RU/EN."""
     store = get_store()
@@ -209,24 +247,39 @@ def expand_query_with_glossary(query: str, use_bge: bool = True) -> Dict[str, An
     extras: List[str] = []
     matched_terms: List[Dict] = []
 
-    for term in store.list_glossary():
+    for term in store.list_glossary(q=query, limit=50):
         all_forms = [term["canonical"]] + term["synonyms_ru"] + term["synonyms_en"]
         if any(f.lower() in q_lower for f in all_forms):
             matched_terms.append({"canonical": term["canonical"], "method": "exact"})
             extras.extend(all_forms[:4])
 
-    if use_bge:
-        for hit in _matcher(True).semantic_lookup(query, top_k=5):
-            matched_terms.append({**hit, "method": "bge"})
+    if use_bge and glossary_use_bge():
+        try:
+            for hit in _matcher(True).semantic_lookup(query, top_k=5):
+                matched_terms.append({**hit, "method": "bge"})
+                extras.append(hit["canonical"])
+                term = next(
+                    (t for t in store.list_glossary(q=hit["canonical"], limit=5) if t["canonical"] == hit["canonical"]),
+                    None,
+                )
+                if term:
+                    extras.extend(term["synonyms_ru"][:2])
+                    extras.extend(term["synonyms_en"][:2])
+        except Exception:
+            for hit in text_glossary_lookup(query, top_k=5):
+                matched_terms.append({**hit, "method": "text"})
+                extras.append(hit["canonical"])
+    else:
+        for hit in text_glossary_lookup(query, top_k=5):
+            matched_terms.append({**hit, "method": "text"})
             extras.append(hit["canonical"])
-            term = next((t for t in store.list_glossary() if t["canonical"] == hit["canonical"]), None)
-            if term:
-                extras.extend(term["synonyms_ru"][:2])
-                extras.extend(term["synonyms_en"][:2])
 
     canonical = index.get(q_lower)
     if canonical:
-        term = next((t for t in store.list_glossary() if t["canonical"] == canonical), None)
+        term = next(
+            (t for t in store.list_glossary(q=canonical, limit=5) if t["canonical"] == canonical),
+            None,
+        )
         if term:
             extras.extend(term["synonyms_ru"] + term["synonyms_en"])
 

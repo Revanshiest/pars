@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-ALLOWED_EXTENSIONS = {".pdf", ".md", ".txt", ".docx", ".xlsx", ".xls"}
+ALLOWED_EXTENSIONS = {".pdf", ".md", ".txt", ".docx", ".xlsx", ".xls", ".json"}
 
 
 def ingest_roots() -> List[Path]:
@@ -67,18 +67,6 @@ def list_ingest_folders() -> List[dict]:
     return items
 
 
-def _file_size(path: Path) -> int:
-    try:
-        return path.stat().st_size
-    except OSError:
-        return 0
-
-
-def sort_paths_by_size(paths: List[Path]) -> List[Path]:
-    """Сначала маленькие файлы, при равном размере — по имени."""
-    return sorted(paths, key=lambda p: (_file_size(p), p.name.lower()))
-
-
 def scan_folder(folder: Path, recursive: bool = False) -> List[Path]:
     files: List[Path] = []
     if recursive:
@@ -86,10 +74,10 @@ def scan_folder(folder: Path, recursive: bool = False) -> List[Path]:
             if p.is_file() and p.suffix.lower() in ALLOWED_EXTENSIONS:
                 files.append(p)
     else:
-        for p in folder.iterdir():
+        for p in sorted(folder.iterdir()):
             if p.is_file() and p.suffix.lower() in ALLOWED_EXTENSIONS:
                 files.append(p)
-    return sort_paths_by_size(files)
+    return files
 
 
 def folder_stats(folder: Path, recursive: bool = False) -> Tuple[int, List[str]]:

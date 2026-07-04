@@ -80,7 +80,22 @@ class Neo4jLoader:
     ) -> Dict[str, int]:
         batch = []
         for t in triples:
-            props = t.get("properties") or {}
+            props: Dict[str, Any] = {}
+            for k, v in (t.get("properties") or {}).items():
+                if v is None:
+                    continue
+                if isinstance(v, dict):
+                    props[k] = json.dumps(v, ensure_ascii=False)
+                elif isinstance(v, list):
+                    props[k] = [
+                        json.dumps(x, ensure_ascii=False) if isinstance(x, dict) else x
+                        for x in v
+                        if x is not None
+                    ]
+                elif isinstance(v, (str, int, float, bool)):
+                    props[k] = v
+                else:
+                    props[k] = str(v)
             fid = t.get("fact_id") or self.fact_id(t["subject"], t["relation"], t["object"])
             batch.append({
                 "fact_id": fid,
@@ -92,7 +107,7 @@ class Neo4jLoader:
                 "object_type": t["object_type"],
                 "obj_id": self._entity_id(t["object"], t["object_type"]),
                 "relation": t["relation"],
-                "properties": props,
+                "properties_json": json.dumps(props, ensure_ascii=False),
                 "numeric_constraints": props.get("numeric_constraints") or [],
                 "confidence": t.get("confidence"),
                 "geography": t.get("geography"),
@@ -119,14 +134,14 @@ class Neo4jLoader:
         ON MATCH SET o.updated_at = datetime()
         MERGE (s)-[r:REL {fact_id: t.fact_id}]->(o)
         ON CREATE SET r.type = t.relation, r.created_at = datetime(),
-                      r.properties = t.properties, r.confidence = t.confidence,
+                      r.properties_json = t.properties_json, r.confidence = t.confidence,
                       r.geography = t.geography, r.numeric_constraints = t.numeric_constraints,
                       r.source_chunk = t.source_chunk, r.doi = t.doi,
                       r.source_page = t.source_page,
                       r.fair_metadata = t.fair_metadata, r.version = t.version,
                       r.verification_status = t.verification_status
         ON MATCH SET r.updated_at = datetime(), r.type = t.relation,
-                     r.properties = t.properties, r.version = t.version,
+                     r.properties_json = t.properties_json, r.version = t.version,
                      r.source_chunk = t.source_chunk, r.doi = t.doi,
                      r.source_page = t.source_page,
                      r.verification_status = t.verification_status
@@ -219,79 +234,3 @@ class Neo4jLoader:
         if rows:
             return {"entities": rows[0]["entities"], "relationships": rows[0]["relationships"]}
         return {"entities": 0, "relationships": 0}
-
-    def export_graph_view(
-        self,
-        limit: int = 200,
-        center_entity: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Экспорт узлов и рёбер для SVG-визуализации."""
-        limit = max(1, min(limit, 500))
-        nodes_map: Dict[str, Dict[str, str]] = {}
-        edges: List[Dict[str, str]] = []
-        seen_edges: set[tuple[str, str, str]] = set()
-
-        def add_node(nid: str, name: str, ntype: str):
-            if nid and nid not in nodes_map:
-                nodes_map[nid] = {"id": nid, "name": name or nid, "type": ntype or "Concept"}
-
-        def add_edge(src: str, tgt: str, relation: str):
-            if not src or not tgt:
-                return
-            rel = relation or "related_to"
-            key = (src, tgt, rel)
-            if key in seen_edges:
-                return
-            seen_edges.add(key)
-            edges.append({
-                "source": src,
-                "target": tgt,
-                "relation": rel,
-                "label": rel.replace("_", " "),
-            })
-
-        if center_entity:
-            rows = self.query(
-                """
-                MATCH (start:Entity)
-                WHERE toLower(start.name) = toLower($center)
-                   OR toLower(start.name) CONTAINS toLower($center)
-                WITH start LIMIT 1
-                MATCH (start)-[r:REL*0..2]-(n:Entity)
-                WITH collect(DISTINCT n)[..$limit] AS nodeList
-                UNWIND nodeList AS n1
-                OPTIONAL MATCH (n1)-[rel:REL]->(n2:Entity)
-                WHERE n2 IN nodeList
-                RETURN n1.id AS src_id, n1.name AS src_name, n1.type AS src_type,
-                       n2.id AS tgt_id, n2.name AS tgt_name, n2.type AS tgt_type,
-                       rel.type AS relation
-                """,
-                {"center": center_entity, "limit": limit},
-            )
-        else:
-            rows = self.query(
-                """
-                MATCH (n:Entity)
-                WITH n ORDER BY n.name LIMIT $limit
-                WITH collect(n) AS nodeList
-                UNWIND nodeList AS n1
-                OPTIONAL MATCH (n1)-[rel:REL]->(n2:Entity)
-                WHERE n2 IN nodeList
-                RETURN n1.id AS src_id, n1.name AS src_name, n1.type AS src_type,
-                       n2.id AS tgt_id, n2.name AS tgt_name, n2.type AS tgt_type,
-                       rel.type AS relation
-                """,
-                {"limit": limit},
-            )
-
-        for row in rows:
-            add_node(row.get("src_id"), row.get("src_name"), row.get("src_type"))
-            if row.get("tgt_id"):
-                add_node(row.get("tgt_id"), row.get("tgt_name"), row.get("tgt_type"))
-                add_edge(row.get("src_id"), row.get("tgt_id"), row.get("relation"))
-
-        return {
-            "nodes": list(nodes_map.values())[:limit],
-            "edges": edges,
-            "center": center_entity,
-        }

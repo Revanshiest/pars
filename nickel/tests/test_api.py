@@ -60,3 +60,37 @@ def test_health_endpoint(client):
     body = r.json()
     assert body["status"] in ("ok", "degraded", "unavailable")
     assert "components" in body or "neo4j" in body
+
+
+def test_upload_glossary_json(client, tmp_platform_db, monkeypatch, tmp_path):
+    import json
+    import time
+
+    from services.auth_bootstrap import bootstrap_admin_from_env
+
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path / "outputs"))
+    bootstrap_admin_from_env()
+    api_key = os.environ["AUTH_ADMIN"].split("|")[2]
+    token = client.post("/api/v1/auth/token", json={"api_key": api_key}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    glossary = [{"canonical": "upload-term", "synonyms_ru": [], "synonyms_en": ["upload term"], "domain": "Concept"}]
+    files = {"file": ("glossary.json", json.dumps(glossary), "application/json")}
+    r = client.post("/api/v1/documents/upload", headers=headers, files=files)
+    assert r.status_code == 200, r.text
+    job_id = r.json()["id"]
+
+    for _ in range(20):
+        job = client.get(f"/api/v1/jobs/{job_id}", headers=headers).json()
+        if job["status"] in ("completed", "failed"):
+            break
+        time.sleep(0.2)
+
+    assert job["status"] == "completed", job.get("error")
+    r2 = client.get("/api/v1/glossary?q=upload-term", headers=headers)
+    assert r2.status_code == 200
+    body = r2.json()
+    terms = body["terms"] if isinstance(body, dict) and "terms" in body else body
+    assert any(t["canonical"] == "upload-term" for t in terms)
+

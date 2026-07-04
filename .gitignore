@@ -32,3 +32,5 @@ nginx/certs/*.pem
 # IDE
 .idea/
 .vscode/
+
+Источники информации/
