@@ -22,11 +22,15 @@ export function JobsProvider({ children }) {
     }
   }, [token, apiKey])
 
+  const activeJobs = jobs.filter(j => j.status === 'running' || j.status === 'pending')
+  const hasActive = activeJobs.length > 0
+
   useEffect(() => {
     refreshJobs()
-    const t = setInterval(refreshJobs, 10000)
+    const ms = hasActive ? 5000 : 30000
+    const t = setInterval(refreshJobs, ms)
     return () => clearInterval(t)
-  }, [refreshJobs])
+  }, [refreshJobs, hasActive])
 
   const expandJob = useCallback((jobId) => {
     setExpanded(prev => ({ ...prev, [jobId]: true }))
@@ -35,8 +39,6 @@ export function JobsProvider({ children }) {
   const toggleExpanded = useCallback((jobId) => {
     setExpanded(prev => ({ ...prev, [jobId]: !prev[jobId] }))
   }, [])
-
-  const activeJobs = jobs.filter(j => j.status === 'running' || j.status === 'pending')
 
   return (
     <JobsContext.Provider value={{

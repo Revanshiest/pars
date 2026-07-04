@@ -7,6 +7,7 @@ import clsx from 'clsx'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useAuth } from '../context/AuthContext'
+import { useJobs } from '../context/JobsContext'
 import { api } from '../api/client'
 
 const STATUS = {
@@ -209,7 +210,7 @@ function JobRow({ job, auth, expanded, onToggle, onRefresh }) {
 
 export default function IngestPage() {
   const { auth, user } = useAuth()
-  const [jobs, setJobs] = useState([])
+  const { jobs: allJobs, refreshJobs } = useJobs()
   const [folders, setFolders] = useState([])
   const [folderPath, setFolderPath] = useState('data/inbox')
   const [extractor, setExtractor] = useState('auto')
@@ -220,14 +221,9 @@ export default function IngestPage() {
   const [showAll, setShowAll] = useState(false)
   const fileRef = useRef(null)
 
-  const loadJobs = useCallback(async () => {
-    try {
-      const list = await api.listJobs(auth, { active: !showAll, limit: 100 })
-      setJobs(list)
-    } catch (e) {
-      setError(e.message)
-    }
-  }, [auth, showAll])
+  const jobs = showAll
+    ? allJobs
+    : allJobs.filter(j => j.status === 'running' || j.status === 'pending')
 
   const loadFolders = useCallback(async () => {
     try {
@@ -240,11 +236,8 @@ export default function IngestPage() {
   }, [auth, folderPath])
 
   useEffect(() => {
-    loadJobs()
     loadFolders()
-    const t = setInterval(loadJobs, 3000)
-    return () => clearInterval(t)
-  }, [loadJobs, loadFolders])
+  }, [loadFolders])
 
   const startFolder = async () => {
     setUploading(true)
@@ -253,7 +246,7 @@ export default function IngestPage() {
     try {
       const job = await api.ingestFolder(auth, folderPath, extractor, true)
       setExpanded(prev => ({ ...prev, [job.id]: true }))
-      await loadJobs()
+      await refreshJobs()
     } catch (e) {
       setError(e.message)
     } finally {
@@ -281,7 +274,7 @@ export default function IngestPage() {
         }
       }
       if (ok) setUploadMsg(`Загружено файлов: ${ok}${failed ? `, ошибок: ${failed}` : ''}`)
-      await loadJobs()
+      await refreshJobs()
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -393,7 +386,7 @@ export default function IngestPage() {
             <button type="button" className="btn-secondary text-xs" onClick={() => setShowAll(v => !v)}>
               {showAll ? 'Только активные' : 'Показать все'}
             </button>
-            <button type="button" className="btn-ghost text-xs" onClick={loadJobs}>
+            <button type="button" className="btn-ghost text-xs" onClick={refreshJobs}>
               <RefreshCw size={13} /> Обновить
             </button>
           </div>
@@ -413,7 +406,7 @@ export default function IngestPage() {
               auth={auth}
               expanded={!!expanded[job.id]}
               onToggle={() => setExpanded(prev => ({ ...prev, [job.id]: !prev[job.id] }))}
-              onRefresh={loadJobs}
+              onRefresh={refreshJobs}
             />
           ))}
         </div>
