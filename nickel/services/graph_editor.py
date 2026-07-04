@@ -46,11 +46,29 @@ def update_triple(
     if not fact:
         return None
     before = dict(fact)
-    for key in ("subject", "object", "relation", "properties", "confidence", "geography", "notes"):
-        if key in updates:
-            fact[key] = updates[key]
+
+    patch: Dict[str, Any] = {}
+    for key in ("subject", "subject_type", "object", "object_type", "relation", "properties", "confidence", "geography"):
+        if key in updates and updates[key] is not None:
+            patch[key] = updates[key]
+
+    if patch:
+        updated = store.update_fact(fact_id, patch, changed_by=user_id, change_reason="expert_edit")
+        if not updated:
+            return None
+        fact = updated
+        try:
+            with Neo4jLoader() as loader:
+                loader.update_fact(fact)
+        except Exception:
+            pass
+
     if updates.get("verification_status"):
-        store.verify_fact(fact_id, updates["verification_status"], user_id, updates.get("notes", ""))
+        store.verify_fact(
+            fact_id, updates["verification_status"], user_id, updates.get("notes", "")
+        )
+        fact = store.get_fact(fact_id)
+
     store.log_graph_edit(user_id, "update", before, fact, comment)
     return fact
 

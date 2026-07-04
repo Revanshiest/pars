@@ -39,12 +39,33 @@ function clearCachedToken() {
   } catch { /* ignore */ }
 }
 
+function normalizeKey(key) {
+  let k = (key || '').trim().replace(/^["']|["']$/g, '')
+  // AUTH_ADMIN=email|name|api_key — часто вставляют всю строку целиком
+  const parts = k.split('|').map(p => p.trim())
+  if (parts.length >= 3 && parts[0].includes('@')) {
+    k = parts[parts.length - 1]
+  }
+  return k.replace(/^["']|["']$/g, '')
+}
+
 function isAbortError(err) {
   return err?.name === 'AbortError' || /abort/i.test(String(err?.message || ''))
 }
 
+function formatError(err) {
+  const msg = err?.message || 'Ошибка авторизации'
+  if (typeof msg === 'string' && msg.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(msg)
+      if (Array.isArray(parsed) && parsed[0]?.msg) return parsed[0].msg
+    } catch { /* ignore */ }
+  }
+  return msg
+}
+
 export function AuthProvider({ children }) {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem(STORAGE_KEY) || '')
+  const [apiKey, setApiKey] = useState(() => normalizeKey(localStorage.getItem(STORAGE_KEY) || ''))
   const [token, setToken] = useState('')
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -58,84 +79,104 @@ export function AuthProvider({ children }) {
     return {}
   }, [token, apiKey])
 
-  const clearSession = useCallback((message = '') => {
+  const wipeCredentials = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY)
     clearCachedToken()
     setApiKey('')
     setToken('')
     setUser(null)
-    setError(message)
   }, [])
 
-  const refreshSession = useCallback(async (key) => {
+  const establishSession = useCallback(async (key, { showError = false } = {}) => {
+    const trimmed = normalizeKey(key)
     abortRef.current?.abort()
     const ac = new AbortController()
     abortRef.current = ac
     const seq = ++sessionSeq.current
     const { signal } = ac
 
-    if (!key) {
+    if (!trimmed) {
       setUser(null)
       setToken('')
       setLoading(false)
-      setError('')
-      return
+      if (showError) setError('')
+      return false
     }
 
     setLoading(true)
-    setError('')
+    if (showError) setError('')
 
     try {
       const cached = loadCachedToken()
       if (cached) {
         try {
           const me = await api.me({ token: cached }, signal)
-          if (seq !== sessionSeq.current || signal.aborted) return
+          if (seq !== sessionSeq.current || signal.aborted) return false
           setToken(cached)
           setUser(me)
+          setApiKey(trimmed)
+          localStorage.setItem(STORAGE_KEY, trimmed)
           setError('')
-          return
+          return true
         } catch {
           clearCachedToken()
         }
       }
 
-      const tok = await api.authToken(key, signal)
-      if (seq !== sessionSeq.current || signal.aborted) return
+      const tok = await api.authToken(trimmed, signal)
+      if (seq !== sessionSeq.current || signal.aborted) return false
       saveCachedToken(tok)
       setToken(tok.access_token)
 
       const me = await api.me({ token: tok.access_token }, signal)
-      if (seq !== sessionSeq.current || signal.aborted) return
+      if (seq !== sessionSeq.current || signal.aborted) return false
       setUser(me)
+      setApiKey(trimmed)
+      localStorage.setItem(STORAGE_KEY, trimmed)
       setError('')
+      return true
     } catch (e) {
-      if (isAbortError(e) || signal.aborted || seq !== sessionSeq.current) return
-      clearSession(e.message)
+      if (isAbortError(e) || signal.aborted || seq !== sessionSeq.current) return false
+      wipeCredentials()
+      if (showError) {
+        setError(formatError(e))
+      }
+      return false
     } finally {
       if (seq === sessionSeq.current) setLoading(false)
     }
-  }, [clearSession])
+  }, [wipeCredentials])
 
   useEffect(() => {
-    refreshSession(apiKey)
+    const isLoginPage = /^\/login\/?$/.test(window.location.pathname)
+    if (isLoginPage) {
+      wipeCredentials()
+      setLoading(false)
+      return
+    }
+    const stored = normalizeKey(localStorage.getItem(STORAGE_KEY) || '')
+    void establishSession(stored, { showError: false })
     return () => {
       sessionSeq.current += 1
       abortRef.current?.abort()
     }
-  }, [apiKey, refreshSession])
+  }, [establishSession, wipeCredentials])
 
-  const login = (key) => {
-    const trimmed = key.trim()
+  const login = useCallback(async (key) => {
+    const trimmed = normalizeKey(key)
+    if (!trimmed) return false
+    setError('')
     clearCachedToken()
     localStorage.setItem(STORAGE_KEY, trimmed)
     setApiKey(trimmed)
-  }
+    return establishSession(trimmed, { showError: true })
+  }, [establishSession])
 
   const logout = () => {
     sessionSeq.current += 1
     abortRef.current?.abort()
-    clearSession('')
+    wipeCredentials()
+    setError('')
   }
 
   return (

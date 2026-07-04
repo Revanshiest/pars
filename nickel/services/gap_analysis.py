@@ -38,6 +38,60 @@ ONTOLOGY_GAP_SCENARIOS: List[Dict[str, Any]] = [
             "Geography": ["холод", "cold", "arctic", "север"],
         },
     },
+    {
+        "id": "desalination_sulfates_chlorides",
+        "label": "Обессоливание воды при сульфатах/хлоридах 200–300 мг/л",
+        "dimensions": {
+            "Material": ["сульфат", "хлорид", "sulfate", "chloride", "Ca", "Mg", "Na"],
+            "Process": ["обессоливание", "desalination", "очистка", "фильтрация", "обратный осмос"],
+            "Geography": ["RU", "EN", "global"],
+        },
+    },
+    {
+        "id": "catholyte_circulation_ni",
+        "label": "Циркуляция католита при электроэкстракции никеля",
+        "dimensions": {
+            "Material": ["никель", "nickel", "Ni", "католит", "catholyte", "электролит"],
+            "Process": ["электроэкстракция", "electrowinning", "циркуляция", "circulation"],
+            "Geography": ["global", "RU", "EN"],
+        },
+    },
+    {
+        "id": "precious_metals_slag_distribution",
+        "label": "Распределение Au/Ag/МПГ между штейном и шлаком",
+        "dimensions": {
+            "Material": ["Au", "Ag", "золото", "серебро", "МПГ", "штейн", "шлак", "matte", "slag"],
+            "Process": ["плавка", "конвертирование", "smelting", "конвертер", "распределение"],
+            "Geography": ["RU", "EN", "global"],
+        },
+    },
+    {
+        "id": "mine_water_reinjection",
+        "label": "Закачка шахтных вод в глубокие горизонты",
+        "dimensions": {
+            "Material": ["шахтные воды", "mine water", "подземные воды"],
+            "Process": ["закачка", "reinjection", "инъекция", "disposal", "утилизация"],
+            "Geography": ["RU", "Russia", "США", "Canada", "global"],
+        },
+    },
+    {
+        "id": "so2_gas_cleaning",
+        "label": "Удаление SO₂ из газов плавильного производства",
+        "dimensions": {
+            "Material": ["SO2", "сернистый газ", "sulfur dioxide"],
+            "Process": ["очистка газов", "gas cleaning", "скруббер", "абсорбция"],
+            "Geography": ["RU", "EN", "global"],
+        },
+    },
+    {
+        "id": "fluidized_bed_furnace",
+        "label": "Печь взвешенной плавки (ПВП) — подача шихты",
+        "dimensions": {
+            "Material": ["шихта", "charge", "концентрат", "руда"],
+            "Process": ["ПВП", "fluidized bed", "взвешенная плавка", "подача шихты"],
+            "Equipment": ["печь", "furnace", "ПВП"],
+        },
+    },
 ]
 
 
@@ -135,7 +189,7 @@ def analyze_scenario(facts: List[Dict[str, Any]], scenario: Dict[str, Any]) -> D
         anchor = dim_coverage.get("Material") or dim_coverage.get("Process") or []
         if anchor:
             with Neo4jLoader() as loader:
-                graph_paths = len(loader.search_neighbors(anchor[0]["subject"], depth=2))
+                graph_paths = len(loader.search_neighbors(anchor[0]["subject"], depth=4))
     except Exception:
         pass
 

@@ -180,6 +180,9 @@ class PlatformStore:
                 ("expires_at", "TEXT"),
                 ("last_used_at", "TEXT"),
             ],
+            "subscriptions": [
+                ("webhook_url", "TEXT"),
+            ],
         }
         for table, cols in columns.items():
             existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
@@ -371,10 +374,15 @@ class PlatformStore:
 
         spec = env_admin_spec()
         count = self.count_users()
+        key_hint = None
+        if spec and spec.get("api_key"):
+            k = spec["api_key"]
+            key_hint = k[-4:] if len(k) >= 4 else None
         return {
             "setup_required": count == 0,
             "admin_from_env": spec is not None,
             "env_admin_email": spec["email"] if spec else None,
+            "env_admin_key_hint": key_hint,
             "users_count": count,
             "roles": ROLES,
         }
@@ -392,12 +400,15 @@ class PlatformStore:
             return dict(row) if row else None
 
     def get_user_by_key(self, api_key: str) -> Optional[Dict[str, Any]]:
+        key = (api_key or "").strip().strip('"').strip("'")
+        if not key:
+            return None
         now = self._now()
         with self._lock, self._connect() as conn:
             row = conn.execute(
                 """SELECT u.id, u.email, u.name, u.role, k.expires_at
                    FROM users u JOIN api_keys k ON k.user_id = u.id WHERE k.key=?""",
-                (api_key,),
+                (key,),
             ).fetchone()
             if not row:
                 return None
@@ -465,6 +476,36 @@ class PlatformStore:
                 ),
             )
         return tid
+
+    def update_glossary_term(self, term_id: str, updates: Dict[str, Any]) -> Optional[Dict]:
+        term = next((t for t in self.list_glossary() if t["id"] == term_id), None)
+        if not term:
+            return None
+        now = self._now()
+        for key in ("canonical", "domain", "definition"):
+            if key in updates and updates[key] is not None:
+                term[key] = updates[key]
+        if "synonyms_ru" in updates:
+            term["synonyms_ru"] = updates["synonyms_ru"]
+        if "synonyms_en" in updates:
+            term["synonyms_en"] = updates["synonyms_en"]
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """UPDATE glossary SET canonical=?, synonyms_ru=?, synonyms_en=?, domain=?, definition=?, updated_at=?
+                   WHERE id=?""",
+                (
+                    term["canonical"],
+                    json.dumps(term["synonyms_ru"], ensure_ascii=False),
+                    json.dumps(term["synonyms_en"], ensure_ascii=False),
+                    term.get("domain"), term.get("definition"), now, term_id,
+                ),
+            )
+        return next((t for t in self.list_glossary() if t["id"] == term_id), None)
+
+    def delete_glossary_term(self, term_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute("DELETE FROM glossary WHERE id=?", (term_id,))
+            return cur.rowcount > 0
 
     def build_glossary_index(self) -> Dict[str, str]:
         index: Dict[str, str] = {}
@@ -861,6 +902,61 @@ class PlatformStore:
                 result.append(d)
             return result
 
+    def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["metadata"] = json.loads(d.get("metadata") or "{}")
+            return d
+
+    def delete_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
+        doc = self.get_document(doc_id)
+        if not doc:
+            return None
+
+        job_id = doc["job_id"]
+        source_document = doc["source_document"]
+        facts = self.list_facts(job_id=job_id, source_document=source_document, limit=100_000)
+        fact_ids = [f["id"] for f in facts]
+
+        with self._lock, self._connect() as conn:
+            if fact_ids:
+                placeholders = ",".join("?" * len(fact_ids))
+                conn.execute(
+                    f"DELETE FROM fact_versions WHERE fact_id IN ({placeholders})",
+                    fact_ids,
+                )
+                conn.execute(
+                    "DELETE FROM verified_facts WHERE job_id=? AND source_document=?",
+                    (job_id, source_document),
+                )
+            conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
+
+        neo4j_deleted = 0
+        qdrant_deleted = 0
+        try:
+            from services.neo4j_loader import Neo4jLoader
+            with Neo4jLoader() as loader:
+                neo4j_deleted = loader.delete_facts_by_ids(fact_ids)
+        except Exception:
+            pass
+        try:
+            from services.qdrant_index import QdrantIndexer
+            qdrant_deleted = QdrantIndexer().delete_by_job_id(job_id)
+        except Exception:
+            pass
+
+        return {
+            "document_id": doc_id,
+            "source_document": source_document,
+            "job_id": job_id,
+            "facts_removed": len(facts),
+            "neo4j_relationships_removed": neo4j_deleted,
+            "qdrant_points_removed": qdrant_deleted,
+        }
+
     def list_facts(
         self,
         status: Optional[str] = None,
@@ -950,6 +1046,53 @@ class PlatformStore:
             row = conn.execute("SELECT * FROM verified_facts WHERE id=?", (fact_id,)).fetchone()
             return self._fact_row(row) if row else None
 
+    def update_fact(
+        self,
+        fact_id: str,
+        updates: Dict[str, Any],
+        changed_by: Optional[str] = None,
+        change_reason: str = "manual_update",
+    ) -> Optional[Dict[str, Any]]:
+        fact = self.get_fact(fact_id)
+        if not fact:
+            return None
+        now = self._now()
+        for key in ("subject", "subject_type", "object", "object_type", "relation",
+                    "properties", "confidence", "geography", "source_chunk", "source_page"):
+            if key in updates and updates[key] is not None:
+                fact[key] = updates[key]
+
+        props = fact.get("properties") or {}
+        if not isinstance(props, dict):
+            props = {}
+        fact["properties"] = props
+
+        with self._lock, self._connect() as conn:
+            old_ver = fact.get("version") or 1
+            conn.execute(
+                """INSERT INTO fact_versions (id, fact_id, version, snapshot, changed_by, change_reason, created_at)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (str(uuid.uuid4()), fact_id, old_ver, self._snapshot(fact), changed_by, change_reason, now),
+            )
+            new_ver = old_ver + 1
+            fact["version"] = new_ver
+            conn.execute(
+                """UPDATE verified_facts SET
+                     subject=?, subject_type=?, relation=?, object=?, object_type=?,
+                     properties=?, confidence=?, geography=?, source_chunk=?, source_page=?,
+                     version=?, updated_at=?
+                   WHERE id=?""",
+                (
+                    fact["subject"], fact["subject_type"], fact["relation"],
+                    fact["object"], fact["object_type"],
+                    json.dumps(props, ensure_ascii=False),
+                    fact.get("confidence"), fact.get("geography"),
+                    fact.get("source_chunk"), fact.get("source_page"),
+                    new_ver, now, fact_id,
+                ),
+            )
+        return self.get_fact(fact_id)
+
     def create_notification(self, user_id: str, title: str, body: str):
         with self._lock, self._connect() as conn:
             conn.execute(
@@ -973,12 +1116,12 @@ class PlatformStore:
                 (notification_id, user_id),
             )
 
-    def add_subscription(self, user_id: str, topic: str, filters: Optional[dict] = None) -> str:
+    def add_subscription(self, user_id: str, topic: str, filters: Optional[dict] = None, webhook_url: Optional[str] = None) -> str:
         sid = str(uuid.uuid4())
         with self._lock, self._connect() as conn:
             conn.execute(
-                "INSERT INTO subscriptions (id, user_id, topic, filters, active, created_at) VALUES (?,?,?,?,1,?)",
-                (sid, user_id, topic, json.dumps(filters or {}), self._now()),
+                "INSERT INTO subscriptions (id, user_id, topic, filters, active, created_at, webhook_url) VALUES (?,?,?,?,1,?,?)",
+                (sid, user_id, topic, json.dumps(filters or {}), self._now(), webhook_url),
             )
         return sid
 
@@ -995,12 +1138,30 @@ class PlatformStore:
             return result
 
     def notify_subscribers(self, topic_keywords: List[str], title: str, body: str):
+        import urllib.request
+
         with self._connect() as conn:
             subs = conn.execute("SELECT * FROM subscriptions WHERE active=1").fetchall()
             for sub in subs:
                 topic = sub["topic"].lower()
-                if any(kw.lower() in topic or topic in kw.lower() for kw in topic_keywords):
-                    self.create_notification(sub["user_id"], title, body)
+                if not any(kw.lower() in topic or topic in kw.lower() for kw in topic_keywords):
+                    continue
+                subd = dict(sub)
+                self.create_notification(subd["user_id"], title, body)
+                webhook = subd.get("webhook_url")
+                if webhook:
+                    try:
+                        payload = json.dumps({
+                            "title": title, "body": body, "topic_keywords": topic_keywords,
+                        }, ensure_ascii=False).encode("utf-8")
+                        req = urllib.request.Request(
+                            webhook, data=payload,
+                            headers={"Content-Type": "application/json"},
+                            method="POST",
+                        )
+                        urllib.request.urlopen(req, timeout=5)
+                    except Exception:
+                        pass
 
     def log_graph_edit(self, user_id: str, action: str, before: Optional[dict], after: Optional[dict], comment: str = ""):
         with self._lock, self._connect() as conn:

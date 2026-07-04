@@ -11,8 +11,10 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    MatchText,
     MatchValue,
     PointStruct,
+    Range,
     VectorParams,
 )
 
@@ -49,6 +51,27 @@ class QdrantIndexer:
                         size=self.embedding_dim, distance=Distance.COSINE
                     ),
                 )
+        self._ensure_payload_indexes()
+
+    def _ensure_payload_indexes(self):
+        idx_fields = [
+            (self.CHUNKS_COLLECTION, "job_id", "keyword"),
+            (self.CHUNKS_COLLECTION, "document_kind", "keyword"),
+            (self.CHUNKS_COLLECTION, "geography", "keyword"),
+            (self.CHUNKS_COLLECTION, "year", "integer"),
+            (self.CHUNKS_COLLECTION, "author", "text"),
+            (self.ENTITIES_COLLECTION, "type", "keyword"),
+            (self.ENTITIES_COLLECTION, "geography", "keyword"),
+        ]
+        for collection, field, schema in idx_fields:
+            try:
+                self.client.create_payload_index(
+                    collection_name=collection,
+                    field_name=field,
+                    field_schema=schema,
+                )
+            except Exception:
+                pass
 
     def index_chunks(
         self,
@@ -171,9 +194,26 @@ class QdrantIndexer:
                 filters.append(FieldCondition(
                     key="geography", match=MatchValue(value=metadata_filters["geography"])
                 ))
+            if metadata_filters.get("author"):
+                filters.append(FieldCondition(
+                    key="author", match=MatchText(text=metadata_filters["author"])
+                ))
+            year = metadata_filters.get("year")
+            year_from = metadata_filters.get("year_from")
+            year_to = metadata_filters.get("year_to")
+            if year is not None:
+                filters.append(FieldCondition(key="year", match=MatchValue(value=int(year))))
+            elif year_from is not None or year_to is not None:
+                filters.append(FieldCondition(
+                    key="year",
+                    range=Range(
+                        gte=int(year_from) if year_from is not None else None,
+                        lte=int(year_to) if year_to is not None else None,
+                    ),
+                ))
 
         query_filter = Filter(must=filters) if filters else None
-        fetch_limit = limit * 4 if metadata_filters else limit
+        fetch_limit = limit if not metadata_filters else limit * 2
         results = self.client.search(
             collection_name=self.CHUNKS_COLLECTION,
             query_vector=vector,
@@ -235,3 +275,18 @@ class QdrantIndexer:
             "chunks": self.search_chunks(query, limit=limit),
             "entities": self.search_entities(query, entity_type=entity_type, limit=limit),
         }
+
+    def delete_by_job_id(self, job_id: str) -> int:
+        """Удаляет векторные точки документа из Qdrant по job_id."""
+        if not job_id:
+            return 0
+        self.ensure_collections()
+        filt = Filter(must=[FieldCondition(key="job_id", match=MatchValue(value=job_id))])
+        removed = 0
+        for name in (self.CHUNKS_COLLECTION, self.ENTITIES_COLLECTION):
+            try:
+                self.client.delete(collection_name=name, points_selector=filt)
+                removed += 1
+            except Exception:
+                pass
+        return removed

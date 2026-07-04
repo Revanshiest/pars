@@ -162,6 +162,18 @@
     let apiKey = localStorage.getItem("nickel_api_key") || "";
     let authStatus = {};
 
+    function bearerToken() {
+      try {
+        const t = sessionStorage.getItem("nickel_access_token");
+        const exp = sessionStorage.getItem("nickel_token_exp");
+        if (!t || !exp) return "";
+        if (Date.now() / 1000 > Number(exp) - 60) return "";
+        return t;
+      } catch {
+        return "";
+      }
+    }
+
     function showMsg(text, type = "info") {
       const el = document.getElementById("message");
       el.className = "alert alert-" + type;
@@ -169,7 +181,11 @@
     }
 
     function headers() {
-      return { "Content-Type": "application/json", "X-API-Key": apiKey };
+      const h = { "Content-Type": "application/json" };
+      const token = bearerToken();
+      if (token) h.Authorization = "Bearer " + token;
+      else if (apiKey) h["X-API-Key"] = apiKey;
+      return h;
     }
 
     async function api(path, opts = {}) {
@@ -189,7 +205,7 @@
           showMsg(hint, "err");
           return;
         }
-        if (!apiKey) {
+        if (!apiKey && !bearerToken()) {
           document.getElementById("login-panel").classList.remove("hidden");
           if (authStatus.admin_from_env) {
             showMsg(

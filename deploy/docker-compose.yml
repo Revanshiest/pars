@@ -1,5 +1,8 @@
-# Nickel full stack. Run from repo root:
-#   docker compose up -d --build
+# Nickel full stack. Run from repo root (один проект — одна сеть):
+#   docker compose -f deploy/docker-compose.yml --env-file .env -p pars up -d --build
+#
+# Не запускайте из папки deploy/ без -p pars — иначе появится второй стек (deploy_default)
+# и nginx получит 502 (frontend/api на другой сети).
 #
 # Первый выпуск сертификата (DOMAIN/EMAIL в .env):
 #   docker compose --profile init-cert run --rm certbot-issue
@@ -73,8 +76,9 @@ services:
       YANDEX_API_KEY: ${YANDEX_API_KEY}
       YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID}
       AUTH_ADMIN: ${AUTH_ADMIN}
-      PLATFORM_DB: ${PLATFORM_DB:-/app/data/platform.db}
+      PLATFORM_DB: /app/data/platform.db
       GLOSSARY_USE_BGE: ${GLOSSARY_USE_BGE:-true}
+      STRICT_SHACL: ${STRICT_SHACL:-true}
       UPLOAD_DIR: /app/data/uploads
       OUTPUT_DIR: /app/data/outputs
       INGEST_ROOTS: /app/data/inbox,/app/data/uploads

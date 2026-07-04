@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BookOpen, Loader2, Plus, RefreshCw, Search, Sparkles } from 'lucide-react'
+import { BookOpen, Loader2, Plus, RefreshCw, Search, Sparkles, Pencil, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../api/client'
@@ -31,6 +31,7 @@ export default function GlossaryPage() {
   const [lookupLoading, setLookupLoading] = useState(false)
   const [lookupResults, setLookupResults] = useState(null)
   const [showForm, setShowForm] = useState(false)
+  const [editId, setEditId] = useState(null)
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState({
     canonical: '',
@@ -90,15 +91,46 @@ export default function GlossaryPage() {
     setBusy(true)
     setError('')
     try {
-      await api.createGlossaryTerm(auth, {
+      const body = {
         canonical: form.canonical.trim(),
         domain: form.domain.trim() || null,
         definition: form.definition.trim() || null,
         synonyms_ru: form.synonyms_ru.split(',').map(s => s.trim()).filter(Boolean),
         synonyms_en: form.synonyms_en.split(',').map(s => s.trim()).filter(Boolean),
-      })
+      }
+      if (editId) {
+        await api.updateGlossaryTerm(auth, editId, body)
+        setEditId(null)
+      } else {
+        await api.createGlossaryTerm(auth, body)
+      }
       setForm({ canonical: '', domain: '', definition: '', synonyms_ru: '', synonyms_en: '' })
       setShowForm(false)
+      await load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const startEdit = (t) => {
+    setEditId(t.id)
+    setForm({
+      canonical: t.canonical,
+      domain: t.domain || '',
+      definition: t.definition || '',
+      synonyms_ru: (t.synonyms_ru || []).join(', '),
+      synonyms_en: (t.synonyms_en || []).join(', '),
+    })
+    setShowForm(true)
+  }
+
+  const removeTerm = async (id) => {
+    if (!window.confirm('Удалить термин?')) return
+    setBusy(true)
+    try {
+      await api.deleteGlossaryTerm(auth, id)
       await load()
     } catch (err) {
       setError(err.message)
@@ -177,7 +209,7 @@ export default function GlossaryPage() {
 
       {showForm && canWrite && (
         <div className="card p-5">
-          <h3 className="section-title text-sm mb-4">Новый термин</h3>
+          <h3 className="section-title text-sm mb-4">{editId ? 'Редактировать' : 'Новый'} термин</h3>
           <form onSubmit={createTerm} className="grid md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className="label mb-1.5 block">Каноническое имя</label>
@@ -249,6 +281,7 @@ export default function GlossaryPage() {
                   <th className="pb-2 pr-3 font-medium">RU</th>
                   <th className="pb-2 pr-3 font-medium">EN</th>
                   <th className="pb-2 font-medium">Источник</th>
+                  {canWrite && <th className="pb-2 font-medium w-20" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-800">
@@ -272,6 +305,18 @@ export default function GlossaryPage() {
                       <SynonymList items={t.synonyms_en} />
                     </td>
                     <td className="py-3 text-xs text-surface-400">{t.source || '—'}</td>
+                    {canWrite && (
+                      <td className="py-3">
+                        <div className="flex gap-1">
+                          <button type="button" className="btn-ghost p-1" onClick={() => startEdit(t)} title="Изменить">
+                            <Pencil size={13} />
+                          </button>
+                          <button type="button" className="btn-ghost p-1 text-red-500" onClick={() => removeTerm(t.id)} title="Удалить">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

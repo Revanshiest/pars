@@ -253,6 +253,7 @@ async def _finalize_pipeline(
                 )
         except Exception as e:
             neo4j_stats = {"error": str(e)}
+            progress("neo4j", 0, 1, f"Ошибка Neo4j: {str(e)[:300]}")
 
     progress("qdrant", 0, 1, "Индексация в Qdrant")
     qdrant_stats = {"chunks": 0, "entities": 0}

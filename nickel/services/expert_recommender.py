@@ -79,6 +79,12 @@ def recommend_experts(topic: str, limit: int = 10) -> Dict[str, Any]:
     for author, cnt in doc_authors.most_common(8):
         add(author, "document_author", min(0.8, 0.5 + 0.05 * cnt), publications=cnt)
 
+    for u in store.list_users():
+        blob = f"{u.get('name', '')} {u.get('email', '')}".lower()
+        if _matches_topic(blob, terms):
+            score = 0.75 if u.get("role") == "analyst" else 0.6
+            add(u["name"], "platform_user", score, email=u.get("email"), role=u.get("role"))
+
     try:
         with Neo4jLoader() as loader:
             for entity in data.get("entities", [])[:5]:

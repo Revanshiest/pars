@@ -130,7 +130,8 @@ app.include_router(platform_router)
 
 ADMIN_STATIC = Path(__file__).resolve().parent / "static" / "admin"
 if ADMIN_STATIC.is_dir():
-    app.mount("/admin", StaticFiles(directory=str(ADMIN_STATIC), html=True), name="admin")
+    # /admin — маршрут React SPA; встроенная HTML-панель на /builtin-admin
+    app.mount("/builtin-admin", StaticFiles(directory=str(ADMIN_STATIC), html=True), name="builtin-admin")
 
 
 async def _run_job(job_id: str, filepath: str, extractor_backend: str | None = None):
@@ -599,18 +600,59 @@ async def live():
 
 @app.get("/metrics")
 async def metrics():
-    """JSON-метрики для мониторинга (Prometheus-совместимый формат опционально)."""
+    """JSON-метрики для мониторинга."""
     from services.health import check_health
 
     report = check_health()
     store = get_store()
     facts_count = len(store.list_facts(limit=10000))
+    dash = store.dashboard_metrics()
     return {
         "status": report.status,
         "facts_total": facts_count,
         "users_total": store.auth_status().get("users_count", 0),
+        "verified_facts": dash.get("verified", 0),
+        "pending_verification": dash.get("pending_verification", 0),
+        "contradictions": dash.get("contradictions", 0),
+        "glossary_terms": dash.get("glossary_terms", 0),
         "components": report.to_dict()["components"],
     }
+
+
+@app.get("/metrics/prometheus")
+async def metrics_prometheus():
+    """Prometheus text exposition format."""
+    from services.health import check_health
+
+    report = check_health()
+    store = get_store()
+    dash = store.dashboard_metrics()
+    up = 1 if report.status in ("ok", "degraded") else 0
+    lines = [
+        "# HELP nickel_up Service availability",
+        "# TYPE nickel_up gauge",
+        f"nickel_up {up}",
+        "# HELP nickel_facts_total Total facts in store",
+        "# TYPE nickel_facts_total gauge",
+        f"nickel_facts_total {dash.get('facts_total', 0)}",
+        "# HELP nickel_facts_verified Verified facts",
+        "# TYPE nickel_facts_verified gauge",
+        f"nickel_facts_verified {dash.get('verified', 0)}",
+        "# HELP nickel_facts_pending Pending verification",
+        "# TYPE nickel_facts_pending gauge",
+        f"nickel_facts_pending {dash.get('pending_verification', 0)}",
+        "# HELP nickel_contradictions Contradiction relations",
+        "# TYPE nickel_contradictions gauge",
+        f"nickel_contradictions {dash.get('contradictions', 0)}",
+        "# HELP nickel_glossary_terms Glossary term count",
+        "# TYPE nickel_glossary_terms gauge",
+        f"nickel_glossary_terms {dash.get('glossary_terms', 0)}",
+    ]
+    for comp, info in report.to_dict()["components"].items():
+        val = 1 if info.get("status") == "ok" else 0
+        lines.append(f'nickel_component_up{{component="{comp}"}} {val}')
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
 
 @app.post("/api/v1/documents/upload", response_model=JobResponse)
@@ -1056,9 +1098,15 @@ async def graph_view(
     audit_action(user, "graph.view", details={"entity_name": entity_name, "limit": limit})
     with Neo4jLoader() as loader:
         data = loader.export_graph_view(limit=limit, center_entity=entity_name)
+        if not data.get("nodes"):
+            facts = get_store().list_facts(limit=max(limit * 5, 500))
+            data = Neo4jLoader.graph_view_from_facts(
+                facts, limit=limit, center_entity=entity_name,
+            )
     return GraphViewResponse(**data)
 
 
 @app.get("/api/v1/ontology")
 async def get_ontology():
-    return {"node_types": NODE_TYPES, "relations": RELATIONS}
+    from ontology.schema import RELATION_META
+    return {"node_types": NODE_TYPES, "relations": RELATIONS, "relation_meta": RELATION_META}

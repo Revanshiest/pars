@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -31,11 +32,38 @@ RELATION_URI = {
 
 CLASS_URI = {t: KG[t] for t in NODE_TYPES}
 
+KNOWN_PROP_URI = {
+    "doi": KG.doi,
+    "updated_at": KG.updatedAt,
+    "valid_from": KG.validFrom,
+}
+
+
+def _property_predicate(key: str) -> URIRef:
+    """Свойства из JSON могут содержать пробелы — KG[key] даёт невалидный URI."""
+    if key in KNOWN_PROP_URI:
+        return KNOWN_PROP_URI[key]
+    slug = re.sub(r"[^a-zA-Z0-9_]", "_", str(key).strip())
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    if not slug or not slug[0].isalpha():
+        slug = f"prop_{hashlib.md5(str(key).encode()).hexdigest()[:10]}"
+    return URIRef(f"http://rd.nickel.local/kg/prop/{slug}")
+
 
 def _entity_uri(name: str, entity_type: str) -> URIRef:
     slug = hashlib.md5(f"{entity_type}:{name}".encode()).hexdigest()[:12]
     safe = name.replace(" ", "_")[:40]
     return URIRef(f"http://rd.nickel.local/entity/{entity_type}/{safe}_{slug}")
+
+
+def _load_ontology_into(graph: Graph) -> None:
+    path = ONTOLOGY_DIR / "kg.ttl"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Ontology file not found: {path}. "
+            "Ensure nickel/ontology/kg.ttl is present in the image."
+        )
+    graph.parse(path, format="turtle")
 
 
 def triples_to_graph(
@@ -44,7 +72,7 @@ def triples_to_graph(
 ) -> Graph:
     g = Graph()
     g.bind("kg", KG)
-    g.parse(ONTOLOGY_DIR / "kg.ttl", format="turtle")
+    _load_ontology_into(g)
 
     for t in triples:
         subj_uri = _entity_uri(t["subject"], t["subject_type"])
@@ -67,7 +95,9 @@ def triples_to_graph(
 
         props = t.get("properties") or {}
         for key, val in props.items():
-            g.add((subj_uri, KG[key], Literal(str(val))))
+            if val is None or val == "":
+                continue
+            g.add((subj_uri, _property_predicate(key), Literal(str(val))))
 
         if t.get("confidence") is not None:
             g.add((subj_uri, KG.confidence, Literal(float(t["confidence"]), datatype=XSD.float)))
@@ -79,14 +109,8 @@ def triples_to_graph(
             g.add((subj_uri, KG.sourceChunk, Literal(t["source_chunk"])))
         if t.get("source_page"):
             g.add((subj_uri, KG.sourcePage, Literal(str(t["source_page"]))))
-        if props.get("doi"):
-            g.add((subj_uri, KG.doi, Literal(props["doi"])))
-        if props.get("updated_at"):
-            g.add((subj_uri, KG.updatedAt, Literal(props["updated_at"])))
         if t.get("version") is not None:
             g.add((subj_uri, KG.version, Literal(int(t["version"]), datatype=XSD.integer)))
-        if props.get("valid_from"):
-            g.add((subj_uri, KG.validFrom, Literal(props["valid_from"])))
 
     return g
 
@@ -113,7 +137,11 @@ def validate_shacl(graph: Graph) -> Dict[str, Any]:
     except ImportError:
         return {"valid": True, "warning": "pyshacl not installed, validation skipped"}
 
-    shapes = Graph().parse(ONTOLOGY_DIR / "shapes.ttl", format="turtle")
+    shapes_path = ONTOLOGY_DIR / "shapes.ttl"
+    if not shapes_path.is_file():
+        return {"valid": True, "warning": "shapes.ttl missing, validation skipped"}
+
+    shapes = Graph().parse(shapes_path, format="turtle")
     conforms, report_graph, report_text = pyshacl.validate(
         graph, shacl_graph=shapes, inference="rdfs", abort_on_error=False
     )

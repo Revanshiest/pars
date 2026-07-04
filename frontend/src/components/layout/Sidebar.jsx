@@ -1,13 +1,34 @@
 import { NavLink } from 'react-router-dom'
-import { Upload, Search, Network, BookOpen, Shield, ChevronLeft, ChevronRight, Atom, LogOut } from 'lucide-react'
+import {
+  Upload, Search, Network, BookOpen, Shield, ChevronLeft, ChevronRight,
+  Atom, LogOut, BarChart3, ShieldCheck, FileText,
+} from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../../context/AuthContext'
 
+const ROLE_PERMS = {
+  researcher: ['synthesis'],
+  analyst: ['verify', 'export', 'compare', 'edit_graph'],
+  project_manager: ['dashboard', 'verify', 'export', 'compare', 'audit', 'edit_graph'],
+  admin: ['*'],
+}
+
+function can(role, perm) {
+  const p = ROLE_PERMS[role] || []
+  return p.includes('*') || p.includes(perm)
+}
+
 const NAV = [
   { to: '/jobs', icon: Upload, label: 'Обработка', desc: 'Папки и задачи' },
-  { to: '/search', icon: Search, label: 'Поиск', desc: 'Гибридный поиск' },
+  { to: '/search', icon: Search, label: 'Исследование', desc: 'Поиск и аналитика' },
   { to: '/graph', icon: Network, label: 'Граф', desc: 'Визуализация знаний' },
   { to: '/glossary', icon: BookOpen, label: 'Глоссарий', desc: 'Термины и синонимы' },
+]
+
+const EXTRA_NAV = [
+  { to: '/dashboard', icon: BarChart3, label: 'Дашборд', desc: 'Метрики R&D', perm: 'dashboard' },
+  { to: '/verify', icon: ShieldCheck, label: 'Верификация', desc: 'Проверка фактов', perm: 'verify' },
+  { to: '/documents', icon: FileText, label: 'Документы', desc: 'Уровни доступа', perm: 'audit' },
 ]
 
 export default function Sidebar({ collapsed, onToggle }) {
@@ -17,6 +38,14 @@ export default function Sidebar({ collapsed, onToggle }) {
     .slice(0, 2)
     .map(s => s[0]?.toUpperCase())
     .join('')
+
+  const items = [
+    ...NAV,
+    ...EXTRA_NAV.filter(n => can(user?.role, n.perm)),
+    ...(user?.role === 'admin' ? [
+      { to: '/admin', icon: Shield, label: 'Пользователи', desc: 'Управление доступом' },
+    ] : []),
+  ]
 
   return (
     <aside className={clsx(
@@ -39,10 +68,8 @@ export default function Sidebar({ collapsed, onToggle }) {
         )}
       </div>
 
-      <nav className="flex-1 py-3 space-y-0.5 px-2">
-        {[...NAV, ...(user?.role === 'admin' ? [
-          { to: '/admin', icon: Shield, label: 'Пользователи', desc: 'Управление доступом' },
-        ] : [])].map(({ to, icon: Icon, label, desc }) => (
+      <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-y-auto">
+        {items.map(({ to, icon: Icon, label, desc }) => (
           <NavLink
             key={to}
             to={to}

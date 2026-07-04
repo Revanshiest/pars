@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from services.glossary import expand_query_with_glossary
+from services.glossary import expand_query_with_glossary, glossary_use_bge
 from services.language_detect import detect_query_language, merge_search_results
 from services.neo4j_loader import Neo4jLoader
 from services.qdrant_index import QdrantIndexer
@@ -40,12 +40,15 @@ def hybrid_ranked_search(
     year_to: Optional[int] = None,
     author: Optional[str] = None,
     document_kind: Optional[str] = None,
-    graph_depth: int = 2,
+    graph_depth: int = 3,
     graph_entity_limit: int = 5,
+    relation_filter: Optional[List[str]] = None,
+    type_filter: Optional[List[str]] = None,
     role: Optional[str] = None,
 ) -> Dict[str, Any]:
+    graph_depth = max(1, min(graph_depth, 4))
     lang = detect_query_language(query)
-    glossary = expand_query_with_glossary(query, use_bge=True)
+    glossary = expand_query_with_glossary(query, use_bge=glossary_use_bge())
     expanded = glossary["expanded"]
 
     meta_filters = {
@@ -159,7 +162,10 @@ def hybrid_ranked_search(
                 name = entity.get("name")
                 if not name:
                     continue
-                neighbors = loader.search_neighbors(name, depth=graph_depth)
+                neighbors = loader.search_neighbors(
+                    name, depth=graph_depth,
+                    relation_filter=relation_filter, type_filter=type_filter,
+                )
                 entity_score = float(entity.get("score", 0.5))
                 for row in neighbors:
                     eid = _graph_edge_id(row)
@@ -209,6 +215,7 @@ def hybrid_ranked_search(
             "author": author,
             "document_kind": document_kind,
             "job_id": job_id,
+            "graph_depth": graph_depth,
         },
         "ranked_results": results,
         "counts": {
@@ -223,6 +230,5 @@ def hybrid_ranked_search(
     }
     if role:
         from services.access_control import filter_search_result
-        from services.store import get_store
         return filter_search_result(payload, role, get_store().get_document_access_map())
     return payload

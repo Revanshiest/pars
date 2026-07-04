@@ -215,7 +215,7 @@ def expand_query_with_glossary(query: str, use_bge: bool = True) -> Dict[str, An
             matched_terms.append({"canonical": term["canonical"], "method": "exact"})
             extras.extend(all_forms[:4])
 
-    if use_bge:
+    if use_bge and glossary_use_bge():
         for hit in _matcher(True).semantic_lookup(query, top_k=5):
             matched_terms.append({**hit, "method": "bge"})
             extras.append(hit["canonical"])

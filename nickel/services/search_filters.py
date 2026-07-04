@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set
 
-from services.glossary import expand_query_with_glossary
+from services.glossary import expand_query_with_glossary, glossary_use_bge
 from services.hybrid_search import hybrid_ranked_search
 from services.language_detect import detect_query_language
 from services.numeric_parser import parse_numeric_query
 from services.numeric_query import search_by_numeric_query
+from services.store import get_store
 
 
 def filtered_search(
@@ -27,6 +28,9 @@ def filtered_search(
     document_kind: Optional[str] = None,
     include_numeric: bool = True,
     use_hybrid: bool = True,
+    graph_depth: int = 3,
+    relation_filter: Optional[List[str]] = None,
+    type_filter: Optional[List[str]] = None,
     role: Optional[str] = None,
 ) -> Dict[str, Any]:
     if use_hybrid:
@@ -43,14 +47,16 @@ def filtered_search(
             year_to=year_to,
             author=author,
             document_kind=document_kind,
+            graph_depth=graph_depth,
+            relation_filter=relation_filter,
+            type_filter=type_filter,
             role=role,
         )
     else:
         from services.qdrant_index import QdrantIndexer
-        from services.store import get_store
 
         lang = detect_query_language(query)
-        glossary_expansion = expand_query_with_glossary(query, use_bge=True)
+        glossary_expansion = expand_query_with_glossary(query, use_bge=glossary_use_bge())
         expanded = glossary_expansion["expanded"]
         indexer = QdrantIndexer()
         meta = {
@@ -107,7 +113,6 @@ def filtered_search(
         )
     if role:
         from services.access_control import filter_search_result
-        from services.store import get_store
         result = filter_search_result(result, role, get_store().get_document_access_map())
     return result
 

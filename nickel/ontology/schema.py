@@ -1,7 +1,7 @@
 """Единый источник истины для онтологии R&D Knowledge Graph."""
 
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Dict
 
 from pydantic import BaseModel, Field
 
@@ -39,6 +39,57 @@ RELATIONS: List[str] = [
     "related_to",
     "can_substitute",
 ]
+
+RELATION_META: Dict[str, Dict[str, str]] = {
+    "uses_material": {
+        "label_ru": "использует материал",
+        "description": "Процесс, установка или эксперимент применяет данный материал",
+    },
+    "operates_at_condition": {
+        "label_ru": "работает при условии",
+        "description": "Режим или параметры эксплуатации (температура, давление, расход)",
+    },
+    "produces_output": {
+        "label_ru": "даёт продукт",
+        "description": "Процесс или установка производит выходной продукт или поток",
+    },
+    "described_in": {
+        "label_ru": "описано в",
+        "description": "Сущность упоминается в публикации, отчёте или документе",
+    },
+    "validated_by": {
+        "label_ru": "подтверждено",
+        "description": "Вывод или факт подтверждён экспертом, нормативом или экспериментом",
+    },
+    "contradicts": {
+        "label_ru": "противоречит",
+        "description": "Конфликтующие выводы или несовместимые данные",
+    },
+    "located_in": {
+        "label_ru": "расположено в",
+        "description": "Географическая или производственная привязка",
+    },
+    "has_property": {
+        "label_ru": "имеет свойство",
+        "description": "Числовой или качественный параметр материала/объекта",
+    },
+    "part_of": {
+        "label_ru": "часть",
+        "description": "Компонент входит в состав системы или установки",
+    },
+    "managed_by": {
+        "label_ru": "управляется",
+        "description": "Объект находится под управлением эксперта, лаборатории или подразделения",
+    },
+    "related_to": {
+        "label_ru": "связано с",
+        "description": "Общая ассоциативная связь без уточнённой семантики",
+    },
+    "can_substitute": {
+        "label_ru": "может заменить",
+        "description": "Альтернативный материал, технология или решение",
+    },
+}
 
 NodeType = Literal[
     "Material", "Equipment", "Process", "Parameter", "Metric",

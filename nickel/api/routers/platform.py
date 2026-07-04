@@ -33,6 +33,14 @@ class GlossaryTermCreate(BaseModel):
     definition: Optional[str] = None
 
 
+class GlossaryTermUpdate(BaseModel):
+    canonical: Optional[str] = None
+    synonyms_ru: Optional[List[str]] = None
+    synonyms_en: Optional[List[str]] = None
+    domain: Optional[str] = None
+    definition: Optional[str] = None
+
+
 class FilteredSearchRequest(BaseModel):
     query: str = Field(..., min_length=2)
     limit: int = Field(default=10, ge=1, le=50)
@@ -49,6 +57,9 @@ class FilteredSearchRequest(BaseModel):
         default=None,
         description="patent | regulation | publication | report | experiment_catalog",
     )
+    graph_depth: int = Field(default=3, ge=1, le=4)
+    relation_filter: Optional[List[str]] = None
+    type_filter: Optional[List[str]] = None
 
 
 class ComparePracticesRequest(BaseModel):
@@ -130,6 +141,7 @@ class CompareRequest(BaseModel):
 class SubscriptionCreate(BaseModel):
     topic: str
     filters: dict = {}
+    webhook_url: Optional[str] = None
 
 
 class ExportRequest(BaseModel):
@@ -208,9 +220,31 @@ async def create_glossary_term(body: GlossaryTermCreate, user=Depends(get_curren
     return {"id": tid, **body.model_dump()}
 
 
+@router.patch("/glossary/{term_id}")
+async def update_glossary_term(term_id: str, body: GlossaryTermUpdate, user=Depends(get_current_user)):
+    check_permission(user, "glossary_write")
+    updated = get_store().update_glossary_term(term_id, body.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(404, "Term not found")
+    audit_action(user, "glossary.update", term_id)
+    return updated
+
+
+@router.delete("/glossary/{term_id}")
+async def delete_glossary_term(term_id: str, user=Depends(get_current_user)):
+    check_permission(user, "glossary_write")
+    if not get_store().delete_glossary_term(term_id):
+        raise HTTPException(404, "Term not found")
+    audit_action(user, "glossary.delete", term_id)
+    return {"deleted": True}
+
+
 @router.post("/search/filtered")
 async def search_filtered(body: FilteredSearchRequest, user=Depends(get_current_user)):
     check_permission(user, "search")
+    from services.health import is_degraded_ok
+    if not is_degraded_ok("search_vector"):
+        raise HTTPException(503, "Vector search unavailable (Qdrant down). Graph/glossary may still work.")
     audit_action(user, "search.filtered", details={"query": body.query})
     return filtered_search(**body.model_dump(), role=user["role"])
 
@@ -218,6 +252,9 @@ async def search_filtered(body: FilteredSearchRequest, user=Depends(get_current_
 @router.post("/search/compare-practices")
 async def search_compare_practices(body: ComparePracticesRequest, user=Depends(get_current_user)):
     check_permission(user, "compare")
+    from services.health import is_degraded_ok
+    if not is_degraded_ok("search_vector"):
+        raise HTTPException(503, "Vector search unavailable (Qdrant down).")
     audit_action(user, "search.compare_practices", details={"query": body.query})
     return compare_practices(**body.model_dump())
 
@@ -225,7 +262,10 @@ async def search_compare_practices(body: ComparePracticesRequest, user=Depends(g
 @router.post("/search/hybrid")
 async def search_hybrid(body: FilteredSearchRequest, user=Depends(get_current_user)):
     check_permission(user, "search")
+    from services.health import is_degraded_ok
     from services.hybrid_search import hybrid_ranked_search
+    if not is_degraded_ok("search_vector"):
+        raise HTTPException(503, "Vector search unavailable (Qdrant down). Graph/glossary may still work.")
     audit_action(user, "search.hybrid", details={"query": body.query})
     return hybrid_ranked_search(**body.model_dump(), role=user["role"])
 
@@ -443,6 +483,18 @@ async def remove_triple(fact_id: str, comment: str = "", user=Depends(get_curren
     return {"deleted": fact_id}
 
 
+@router.post("/graph/sync")
+async def sync_graph_from_store(user=Depends(get_current_user)):
+    """Синхронизация фактов SQLite → Neo4j (после сбоя загрузки)."""
+    check_permission(user, "edit_graph")
+    from services.neo4j_loader import Neo4jLoader
+
+    audit_action(user, "graph.sync", details={})
+    with Neo4jLoader() as loader:
+        result = loader.sync_from_store()
+    return result
+
+
 @router.get("/graph/edits")
 async def graph_edit_history(limit: int = 50, user=Depends(get_current_user)):
     check_permission(user, "read")
@@ -464,7 +516,7 @@ async def mark_read(notification_id: str, user=Depends(get_current_user)):
 @router.post("/subscriptions")
 async def subscribe(body: SubscriptionCreate, user=Depends(get_current_user)):
     check_permission(user, "subscribe")
-    sid = get_store().add_subscription(user["id"], body.topic, body.filters)
+    sid = get_store().add_subscription(user["id"], body.topic, body.filters, body.webhook_url)
     return {"id": sid, "topic": body.topic}
 
 
@@ -505,7 +557,11 @@ async def auth_setup(body: FirstAdminSetup):
 @router.post("/auth/token")
 async def auth_token(body: TokenRequest):
     store = get_store()
-    user = store.get_user_by_key(body.api_key)
+    raw = body.api_key.strip().strip('"').strip("'")
+    parts = [p.strip() for p in raw.split("|")]
+    if len(parts) >= 3 and "@" in parts[0]:
+        raw = parts[-1].strip().strip('"').strip("'")
+    user = store.get_user_by_key(raw)
     if not user:
         raise HTTPException(401, "Invalid or expired API key")
     try:
@@ -557,6 +613,17 @@ async def list_documents(
     if access_level:
         docs = [d for d in docs if d.get("access_level") == access_level]
     return {"documents": docs}
+
+
+@router.delete("/documents/{doc_id}")
+async def delete_document(doc_id: str, user=Depends(get_current_user)):
+    check_permission(user, "audit")
+    store = get_store()
+    result = store.delete_document(doc_id)
+    if not result:
+        raise HTTPException(404, "Document not found")
+    audit_action(user, "document.delete", doc_id, result)
+    return result
 
 
 @router.get("/admin/roles")

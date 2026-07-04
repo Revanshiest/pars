@@ -71,7 +71,7 @@ class KnowledgeAgent:
         if any(w in q for w in ["связ", "граф", "relationship", "цепоч"]):
             entities = re.findall(r"[A-ZА-Я][a-zа-яё\-]+(?:\s[A-ZА-Я][a-zа-яё\-]+)?", question)
             if entities:
-                plan.append({"tool": "explore_graph", "args": {"entity_name": entities[0], "depth": 2}})
+                plan.append({"tool": "explore_graph", "args": {"entity_name": entities[0], "depth": 4}})
 
         if any(w in q for w in ["обзор", "literature", "литобзор"]):
             plan.append({"tool": "_lit_review", "args": {"topic": question}})

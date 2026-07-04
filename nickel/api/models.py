@@ -83,6 +83,7 @@ class GraphViewResponse(BaseModel):
     nodes: List[Dict[str, str]]
     edges: List[Dict[str, str]]
     center: Optional[str] = None
+    source: Optional[str] = None
 
 
 class HealthResponse(BaseModel):
