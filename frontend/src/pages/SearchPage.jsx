@@ -7,9 +7,11 @@ import { api } from '../api/client'
 import { SourceMetaBadges } from '../components/SourceMeta'
 
 const FALLBACK_STARTERS = [
-  'Какие методы обессоливания воды подходят при сульфатах ≤300 мг/л?',
-  'Какие решения циркуляции католита при электроэкстракции никеля описаны в мировой практике?',
-  'Сравни отечественную и мировую практику электроэкстракции меди',
+  'Какие варианты подготовки и обессоливания воды для горно-металлургических предприятий описаны в загруженных материалах?',
+  'Какие технические решения по циркуляции католита при электроэкстракции никеля есть в материалах?',
+  'Какие данные по электроэкстракции меди и содержанию Cu в концентрате приведены в базе?',
+  'Какие технологии кучного выщелачивания описаны в загруженных документах?',
+  'Сделай обзор методов очистки шахтных вод по источникам в базе.',
 ]
 
 function SourceChip({ item }) {
@@ -191,51 +193,62 @@ export default function SearchPage() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 pr-1 min-h-0">
-        {messages.length === 0 && !loading && (
-          <div className="card p-6 text-center">
-            <Bot size={32} className="mx-auto text-brand-400 mb-3" />
-            <p className="text-sm text-surface-300 mb-4">
-              Спросите о процессах, материалах, предприятиях или параметрах из загруженных документов
+      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col">
+        {messages.length === 0 && !loading ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-8">
+            <p className="text-sm text-amber-700/90 max-w-md leading-relaxed mb-6">
+              Просим прощения, у нас загружена только часть файлов, из-за чего ответы могут быть не на все вопросы
             </p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {starters.map(q => (
-                <button
-                  key={q}
-                  type="button"
-                  className="badge bg-brand-50 text-brand-700 border border-brand-100 cursor-pointer hover:bg-brand-100 text-left"
-                  onClick={() => send(q)}
-                >
-                  {q.length > 48 ? q.slice(0, 47) + '…' : q}
-                </button>
-              ))}
+            <div className="card p-6 w-full max-w-lg">
+              <Bot size={32} className="mx-auto text-brand-400 mb-3" />
+              <p className="text-sm text-surface-300 mb-4">
+                Спросите о процессах, материалах, предприятиях или параметрах из загруженных документов
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {starters.map(q => (
+                  <button
+                    key={q}
+                    type="button"
+                    className="badge bg-brand-50 text-brand-700 border border-brand-100 cursor-pointer hover:bg-brand-100 text-left"
+                    onClick={() => send(q)}
+                  >
+                    {q.length > 48 ? q.slice(0, 47) + '…' : q}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        )}
+        ) : (
+          <div className="space-y-4 pr-1 py-2">
+            <p className="text-xs text-amber-700/80 text-center max-w-lg mx-auto px-4 leading-relaxed">
+              Просим прощения, у нас загружена только часть файлов, из-за чего ответы могут быть не на все вопросы
+            </p>
 
-        {messages.map((msg, i) => (
-          msg.role === 'user'
-            ? <UserMessage key={i} content={msg.content} />
-            : <AssistantMessage key={i} msg={msg} />
-        ))}
+            {messages.map((msg, i) => (
+              msg.role === 'user'
+                ? <UserMessage key={i} content={msg.content} />
+                : <AssistantMessage key={i} msg={msg} />
+            ))}
 
-        {loading && (
-          <div className="flex gap-3 max-w-3xl">
-            <div className="w-8 h-8 rounded-xl bg-brand-100 border border-brand-200 flex items-center justify-center shrink-0">
-              <Bot size={16} className="text-brand-600" />
-            </div>
-            <div className="card p-4 flex items-center gap-2 text-sm text-surface-400">
-              <Loader2 size={16} className="animate-spin-slow text-brand-600" />
-              Подбираю ответ по базе знаний…
-            </div>
+            {loading && (
+              <div className="flex gap-3 max-w-3xl">
+                <div className="w-8 h-8 rounded-xl bg-brand-100 border border-brand-200 flex items-center justify-center shrink-0">
+                  <Bot size={16} className="text-brand-600" />
+                </div>
+                <div className="card p-4 flex items-center gap-2 text-sm text-surface-400">
+                  <Loader2 size={16} className="animate-spin-slow text-brand-600" />
+                  Подбираю ответ по базе знаний…
+                </div>
+              </div>
+            )}
+
+            {error && messages.length > 0 && (
+              <p className="text-xs text-red-500 text-center">{error}</p>
+            )}
+
+            <div ref={bottomRef} />
           </div>
         )}
-
-        {error && messages.length > 0 && (
-          <p className="text-xs text-red-500 text-center">{error}</p>
-        )}
-
-        <div ref={bottomRef} />
       </div>
 
       {/* Input */}

@@ -91,7 +91,7 @@ async def search_hybrid(body: FilteredSearchRequest, user=Depends(get_current_us
 
 
 @router.get("/search/examples")
-async def search_examples(user=Depends(get_current_user)):
+async def search_examples_endpoint(user=Depends(get_current_user)):
     check_permission(user, "search")
-    from services.platform_config import search_examples
-    return {"examples": search_examples()}
+    from services.search_examples_builder import graph_search_examples
+    return {"examples": graph_search_examples()}

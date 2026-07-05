@@ -13,7 +13,7 @@ def test_domain_processes_from_config():
 def test_search_examples_from_config():
     examples = search_examples()
     assert len(examples) >= 3
-    assert any("обессолив" in e.lower() for e in examples)
+    assert any("материал" in e.lower() or "обзор" in e.lower() or "электро" in e.lower() for e in examples)
 
 
 def test_discover_gap_scenarios_empty():

@@ -407,7 +407,8 @@ export default function GraphPage() {
             )}
           </div>
           <button type="button" onClick={() => canvasRef.current?.stabilize()} className="btn-secondary w-full text-xs">
-            <RotateCcw size={11} /> Перезапустить физику
+            <RotateCcw size={11} />
+            {sourceDoc ? 'Перезапустить физику' : 'Перестроить раскладку'}
           </button>
         </div>
 
@@ -580,6 +581,7 @@ export default function GraphPage() {
             nodes={filteredNodes}
             edges={filteredEdges}
             relationMeta={relationMeta}
+            physicsEnabled={Boolean(sourceDoc)}
             selectedNodeId={selected}
             selectedEdgeId={selectedEdgeId}
             showEdgeLabels={showAllLabels}

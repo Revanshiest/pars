@@ -30,6 +30,8 @@ const VisGraphCanvas = forwardRef(function VisGraphCanvas(
     selectedNodeId = null,
     selectedEdgeId = null,
     showEdgeLabels = false,
+    /** true — узлы продолжают «жить» после стабилизации; false — фиксированная раскладка */
+    physicsEnabled = true,
     onReady,
     onNodeSelect,
     onEdgeSelect,
@@ -44,6 +46,21 @@ const VisGraphCanvas = forwardRef(function VisGraphCanvas(
   const nodesDsRef = useRef(null)
   const edgesDsRef = useRef(null)
   const edgesMapRef = useRef(new Map())
+  const physicsEnabledRef = useRef(physicsEnabled)
+
+  useEffect(() => {
+    physicsEnabledRef.current = physicsEnabled
+  }, [physicsEnabled])
+
+  const applyPhysicsMode = (network, { afterStabilize = false } = {}) => {
+    if (physicsEnabledRef.current) {
+      network.setOptions({
+        physics: { enabled: true, stabilization: afterStabilize ? false : undefined },
+      })
+    } else {
+      network.setOptions({ physics: { enabled: false, stabilization: false } })
+    }
+  }
 
   useImperativeHandle(ref, () => ({
     fit: () => networkRef.current?.fit({ animation: false }),
@@ -62,8 +79,12 @@ const VisGraphCanvas = forwardRef(function VisGraphCanvas(
       if (!net) return
       const n = nodesDsRef.current?.length ?? nodes.length
       const tier = graphSizeTier(n, edges.length)
-      net.setOptions({ physics: { enabled: true, stabilization: { iterations: tier === 'large' ? 35 : 70 } } })
-      net.stabilize(tier === 'large' ? 35 : 70)
+      const iterations = tier === 'large' ? 35 : 70
+      net.setOptions({ physics: { enabled: true, stabilization: { iterations } } })
+      net.stabilize(iterations)
+      if (!physicsEnabledRef.current) {
+        net.once('stabilizationIterationsDone', () => applyPhysicsMode(net, { afterStabilize: true }))
+      }
     },
     focusNode: (nodeId) => {
       const net = networkRef.current
@@ -103,7 +124,11 @@ const VisGraphCanvas = forwardRef(function VisGraphCanvas(
       nodesDsRef.current = nodesDs
       edgesDsRef.current = edgesDs
 
-      const network = new Network(hostRef.current, { nodes: nodesDs, edges: edgesDs }, buildVisOptions(tier))
+      const network = new Network(
+        hostRef.current,
+        { nodes: nodesDs, edges: edgesDs },
+        buildVisOptions(tier, { physicsEnabled: physicsEnabledRef.current }),
+      )
       networkRef.current = network
 
       network.on('click', (params) => {
@@ -128,12 +153,14 @@ const VisGraphCanvas = forwardRef(function VisGraphCanvas(
       network.on('blurEdge', () => onEdgeHover?.(null))
 
       network.on('dragEnd', () => {
-        network.setOptions({ physics: { enabled: true, stabilization: false } })
+        if (physicsEnabledRef.current) {
+          network.setOptions({ physics: { enabled: true, stabilization: false } })
+        }
       })
 
       network.once('stabilizationIterationsDone', () => {
         network.fit({ animation: false })
-        network.setOptions({ physics: { enabled: true, stabilization: false } })
+        applyPhysicsMode(network, { afterStabilize: true })
         onReady?.()
       })
     }
@@ -149,7 +176,7 @@ const VisGraphCanvas = forwardRef(function VisGraphCanvas(
       networkRef.current?.destroy()
       networkRef.current = null
     }
-  }, [nodes, edges, relationMeta, showEdgeLabels]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nodes, edges, relationMeta, showEdgeLabels, physicsEnabled]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const nodesDs = nodesDsRef.current

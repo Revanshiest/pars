@@ -177,7 +177,7 @@ export function assignTypeClusterPositions(apiNodes, degrees = {}) {
   })
 }
 
-export function buildVisOptions(tier = 'small') {
+export function buildVisOptions(tier = 'small', { physicsEnabled = true } = {}) {
   const iterations = tier === 'large' ? 35 : tier === 'medium' ? 60 : 100
   const edgeSmooth = tier === 'large'
     ? { enabled: true, type: 'continuous', roundness: 0.08 }
@@ -189,7 +189,11 @@ export function buildVisOptions(tier = 'small') {
     layout: { improvedLayout: tier !== 'large', clusterThreshold: 150 },
     physics: {
       enabled: true,
-      stabilization: { iterations, fit: true, updateInterval: tier === 'large' ? 50 : 25 },
+      stabilization: {
+        iterations,
+        fit: true,
+        updateInterval: tier === 'large' ? 50 : 25,
+      },
       barnesHut: {
         gravitationalConstant: tier === 'large' ? -4200 : -7500,
         centralGravity: tier === 'large' ? 0.14 : 0.22,
