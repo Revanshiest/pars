@@ -50,20 +50,40 @@ def catalog_for_prompt() -> str:
     return "\n".join(lines)
 
 
+def _strip_auto_hints(q: str) -> str:
+    """Убрать хвостовые подсказки из стартовых вопросов — они не означают запрос сравнения."""
+    for suffix in (
+        "отечественная и мировая практика по загруженным материалам.",
+        "по отечественным источникам в базе.",
+        "по зарубежным источникам в базе.",
+    ):
+        q = q.replace(suffix, "")
+    return q.strip()
+
+
+def _wants_compare(q: str) -> bool:
+    core = _strip_auto_hints(q)
+    if any(w in core for w in ("сравни", " vs ", "ru vs", "vs мир", "domestic vs", "global practice")):
+        return True
+    return "отечествен" in core and ("миров" in core or "зарубеж" in core)
+
+
 def select_tools(question: str) -> List[Dict[str, Any]]:
-    """Автовыбор инструментов по вопросу (без LLM). Всегда search_facts + glossary."""
+    """Автовыбор инструментов по вопросу (без LLM)."""
     q = question.lower()
     plan: List[Dict[str, Any]] = [
-        {"name": "search_facts", "arguments": {"query": question, "limit": 15}},
-        {"name": "glossary_lookup", "arguments": {"text": question}},
+        {"name": "search_facts", "arguments": {"query": question, "limit": 12}},
     ]
 
-    if any(w in q for w in [
-        "отечествен", "зарубеж", "миров", "ru vs", "сравни", "vs мир", "domestic",
-    ]):
-        plan.append({"name": "compare_practices", "arguments": {"query": question}})
+    if len(question) <= 140:
+        plan.append({"name": "glossary_lookup", "arguments": {"text": question[:200]}})
 
-    if any(w in q for w in ["мг/л", "концентрац", "≤", "≥", "<", ">", "%", "ppm"]):
+    if _wants_compare(q):
+        plan.append({"name": "compare_practices", "arguments": {"query": question, "limit": 8}})
+
+    if any(w in q for w in ["мг/л", "концентрац", "≤", "≥", "<", ">", "ppm"]) or re.search(
+        r"\d+\s*мг", q
+    ):
         plan.append({"name": "numeric_search", "arguments": {"query": question}})
 
     if any(w in q for w in ["связ", "граф", "relationship", "сосед", "цепоч"]):
@@ -74,23 +94,11 @@ def select_tools(question: str) -> List[Dict[str, Any]]:
         if entities:
             plan.append({
                 "name": "explore_graph",
-                "arguments": {"entity_name": entities[0], "limit": 20},
+                "arguments": {"entity_name": entities[0], "limit": 12},
             })
 
     if any(w in q for w in ["сколько факт", "статистик", "объём баз", "сколько документ"]):
         plan.append({"name": "knowledge_stats", "arguments": {}})
-
-    # Именованная сущность для обхода графа — через токены запроса
-    if not any(p["name"] == "explore_graph" for p in plan):
-        from services.query_tokens import extract_search_terms
-        terms = extract_search_terms(question)
-        for term in terms:
-            if term[0].isupper() or len(term) >= 4:
-                plan.append({
-                    "name": "explore_graph",
-                    "arguments": {"entity_name": term, "limit": 15},
-                })
-                break
 
     return _dedupe_plan(plan)
 
@@ -104,4 +112,4 @@ def _dedupe_plan(plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
         seen.add(key)
         out.append(step)
-    return out[:5]
+    return out[:4]

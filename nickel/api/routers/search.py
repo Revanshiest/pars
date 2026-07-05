@@ -93,5 +93,10 @@ async def search_hybrid(body: FilteredSearchRequest, user=Depends(get_current_us
 @router.get("/search/examples")
 async def search_examples_endpoint(user=Depends(get_current_user)):
     check_permission(user, "search")
+    from services.platform_config import search_examples as config_search_examples
     from services.search_examples_builder import graph_search_examples
-    return {"examples": graph_search_examples()}
+    try:
+        return {"examples": graph_search_examples()}
+    except Exception as exc:
+        logger.exception("search examples generation failed: %s", exc)
+        return {"examples": list(config_search_examples())[:5]}

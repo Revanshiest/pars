@@ -41,3 +41,30 @@ def test_graph_search_examples_from_facts(tmp_platform_db):
         any(kw in e.lower() for kw in ("электроэкстрак", "мед", "copper", "cu", "выщелач", "leach"))
         for e in examples
     )
+
+
+def test_electrolyte_systems_question_builder(tmp_platform_db):
+    from services.search_examples_builder import _q_electrolyte_systems
+
+    facts = [
+        {
+            "subject": "nickel",
+            "subject_type": "Material",
+            "relation": "uses_material",
+            "object": "electrolyte circulation",
+            "object_type": "Process",
+            "properties": {"description": "electrolyte in cells"},
+        },
+        {
+            "subject": "copper",
+            "subject_type": "Material",
+            "relation": "uses_material",
+            "object": "diaphragm cell",
+            "object_type": "Equipment",
+            "properties": {},
+        },
+    ]
+    question = _q_electrolyte_systems(facts, None)
+    assert question
+    assert "электролит" in question.lower()
+    assert "никель" in question.lower() or "copper" in question.lower()

@@ -128,7 +128,7 @@ def _q_electrolyte_systems(facts: List[Dict[str, Any]], hint: CompareHint) -> Op
     for token in ("никель", "nickel", "медь", "copper", "кобальт", "cobalt"):
         if any(token in _fact_blob(f) for f in facts):
             metals.append(token)
-    metal_phrase = ", ".join(dict.fromkeys(metals)[:3]) if metals else "никеля и меди"
+    metal_phrase = ", ".join(list(dict.fromkeys(metals))[:3]) if metals else "никеля и меди"
     return _with_compare(
         f"Обзор по загруженным материалам: как организованы подача электролита в ванны, "
         f"движение потока, циркуляция и вывод раствора при электролитическом производстве "
@@ -260,7 +260,7 @@ def _fallback_from_entities(facts: List[Dict[str, Any]], limit: int) -> List[str
 
 def graph_search_examples(limit: int = 5) -> List[str]:
     """Экспертные вопросы только по темам, подтверждённым фактами в графе."""
-    facts = get_store().list_facts(limit=5000)
+    facts = get_store().list_facts(limit=2500)
     if not facts:
         return list(config_search_examples())[:limit]
 

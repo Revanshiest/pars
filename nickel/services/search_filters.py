@@ -149,9 +149,15 @@ def compare_practices(
         "author": author,
     }
 
-    domestic = hybrid_ranked_search(query, geography="RU", **shared_filters)
-    global_en = hybrid_ranked_search(query, geography="EN", **shared_filters)
-    global_world = hybrid_ranked_search(query, geography="global", **shared_filters)
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_domestic = pool.submit(hybrid_ranked_search, query, geography="RU", **shared_filters)
+        f_global_en = pool.submit(hybrid_ranked_search, query, geography="EN", **shared_filters)
+        f_global_world = pool.submit(hybrid_ranked_search, query, geography="global", **shared_filters)
+        domestic = f_domestic.result()
+        global_en = f_global_en.result()
+        global_world = f_global_world.result()
 
     ru_topics = _topic_set(domestic)
     en_topics = _topic_set(global_en) | _topic_set(global_world)

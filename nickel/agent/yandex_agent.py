@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Dict, List, Optional
 
 from agent.tool_registry import catalog_for_prompt, select_tools
 from agent.tools import SearchTools
 from services.fact_format import fact_display_fields, format_fact_answer
+from services.graph_view import _json_safe
 from services.verification import enrich_fact
 from services.logging_config import get_logger
 from services.user_messages import Msg
@@ -207,7 +209,11 @@ class YandexKnowledgeAgent:
         seen: set[str] = set()
         for tr in tool_results:
             data = tr.get("result", {})
-            for item in data.get("results", []) + data.get("ranked_results", []):
+            items = list(data.get("results", []) + data.get("ranked_results", []))
+            for block in (data.get("domestic"), data.get("global")):
+                if isinstance(block, dict):
+                    items.extend(block.get("ranked_results", []))
+            for item in items:
                 fid = str(item.get("id", item.get("title", "")))
                 if fid in seen:
                     continue
@@ -216,22 +222,6 @@ class YandexKnowledgeAgent:
                     raw = item.get("raw") or item
                     d = fact_display_fields(raw)
                     item = {**item, "answer": d["answer"], "value": d["value"], "title": d["title"]}
-                    if isinstance(raw, dict) and raw.get("subject"):
-                        try:
-                            enriched = enrich_fact(raw)
-                            item["credibility"] = enriched.get("credibility")
-                            item["provenance"] = enriched.get("provenance")
-                            meta = dict(item.get("metadata") or {})
-                            prov = enriched.get("provenance") or {}
-                            meta.setdefault("geography", enriched.get("geography") or raw.get("geography"))
-                            meta.setdefault("verification_status", enriched.get("verification_status") or raw.get("verification_status"))
-                            meta.setdefault("source_document", prov.get("source_document") or raw.get("source_document"))
-                            meta.setdefault("document_kind", prov.get("document_kind"))
-                            meta.setdefault("doi", prov.get("doi"))
-                            meta.setdefault("year", prov.get("year"))
-                            item["metadata"] = meta
-                        except Exception:
-                            pass
                 ranked.append(item)
             for e in data.get("edges", []):
                 ranked.append({
@@ -241,7 +231,32 @@ class YandexKnowledgeAgent:
                     "snippet": e.get("relation"),
                 })
         ranked.sort(key=lambda x: x.get("score", 0), reverse=True)
-        return ranked[:15]
+        ranked = ranked[:12]
+        for idx, item in enumerate(ranked):
+            if item.get("result_type") != "fact" or idx >= 8:
+                continue
+            raw = item.get("raw") or item
+            if not isinstance(raw, dict) or not raw.get("subject"):
+                continue
+            try:
+                enriched = enrich_fact(dict(raw))
+                item["credibility"] = enriched.get("credibility")
+                item["provenance"] = enriched.get("provenance")
+                meta = dict(item.get("metadata") or {})
+                prov = enriched.get("provenance") or {}
+                meta.setdefault("geography", enriched.get("geography") or raw.get("geography"))
+                meta.setdefault(
+                    "verification_status",
+                    enriched.get("verification_status") or raw.get("verification_status"),
+                )
+                meta.setdefault("source_document", prov.get("source_document") or raw.get("source_document"))
+                meta.setdefault("document_kind", prov.get("document_kind"))
+                meta.setdefault("doi", prov.get("doi"))
+                meta.setdefault("year", prov.get("year"))
+                item["metadata"] = meta
+            except Exception:
+                pass
+        return [_json_safe(item) for item in ranked]
 
     async def query(
         self,
@@ -254,10 +269,14 @@ class YandexKnowledgeAgent:
         tool_results: List[Dict[str, Any]] = []
         context_blocks: List[str] = []
 
-        for step in plan:
+        async def _run_step(step: Dict[str, Any]) -> tuple[str, Dict[str, Any], Dict[str, Any]]:
             name = step["name"]
             args = step.get("arguments") or {}
-            result = self._execute_tool(name, args, role)
+            result = await asyncio.to_thread(self._execute_tool, name, args, role)
+            return name, args, result
+
+        steps_out = await asyncio.gather(*[_run_step(step) for step in plan])
+        for name, args, result in steps_out:
             tool_calls.append({"tool": name, "args": args, "result_count": _result_count(result)})
             tool_results.append({"tool": name, "result": result})
             context_blocks.append(self._format_tool_context(name, result, question))
