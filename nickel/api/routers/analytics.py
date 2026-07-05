@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.auth import audit_action, check_permission, get_current_user
@@ -14,6 +16,7 @@ from services.analytics import (
     generate_literature_review,
     generate_recommendations,
 )
+from services.gap_analysis import iter_ontology_gaps
 from services.search_runtime import run_search
 from services.store import get_store
 
@@ -80,6 +83,52 @@ async def knowledge_gaps(
         domain=domain, query=query, material=material, process=process, climate=climate,
         auto=auto,
     )
+
+
+@router.get("/analytics/gaps/stream")
+async def knowledge_gaps_stream(
+    domain: Optional[str] = None,
+    query: Optional[str] = None,
+    material: Optional[str] = None,
+    process: Optional[str] = None,
+    climate: Optional[str] = None,
+    auto: bool = True,
+    user=Depends(get_current_user),
+):
+    """NDJSON-поток: пробелы появляются по мере анализа сценариев."""
+    check_permission(user, "read")
+    audit_action(user, "analytics.gaps.stream", details={"query": query, "domain": domain, "auto": auto})
+
+    def event_stream():
+        try:
+            for event in iter_ontology_gaps(
+                query=query,
+                material=material,
+                process=process,
+                climate=climate,
+                domain=domain,
+                auto=auto,
+            ):
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+        except Exception as exc:
+            yield json.dumps({"type": "error", "message": str(exc)}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
+
+
+@router.post("/analytics/gaps/stream")
+async def knowledge_gaps_stream_post(body: OntologyGapRequest, user=Depends(get_current_user)):
+    check_permission(user, "read")
+    audit_action(user, "analytics.gaps.stream", details=body.model_dump(exclude_none=True))
+
+    def event_stream():
+        try:
+            for event in iter_ontology_gaps(**body.model_dump(exclude_none=True)):
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+        except Exception as exc:
+            yield json.dumps({"type": "error", "message": str(exc)}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
 @router.post("/analytics/gaps/ontology")

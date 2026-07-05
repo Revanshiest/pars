@@ -94,7 +94,7 @@ def select_tools(question: str) -> List[Dict[str, Any]]:
         if entities:
             plan.append({
                 "name": "explore_graph",
-                "arguments": {"entity_name": entities[0], "limit": 12},
+                "arguments": {"entity_name": entities[0], "limit": 8},
             })
 
     if any(w in q for w in ["сколько факт", "статистик", "объём баз", "сколько документ"]):

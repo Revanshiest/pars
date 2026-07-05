@@ -296,6 +296,35 @@ def view_to_triples(view: Dict[str, Any]) -> List[Dict[str, Any]]:
     return triples
 
 
+def explore_entity_neighbors(
+    entity_name: str,
+    *,
+    limit: int = 12,
+    role: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Быстрый обход графа для чат-агента: SQL-соседи без полной сборки view."""
+    entity_name = (entity_name or "").strip()
+    if not entity_name:
+        return {"entity": entity_name, "nodes": 0, "edges": [], "triples": []}
+
+    store = get_store()
+    fetch = min(max(limit * 2, limit), 48)
+    facts = store.list_entity_neighbor_facts(entity_name, limit=fetch, role=role)
+    triples = facts_as_triples(facts)[:limit]
+    edges = [
+        {"source": t["subject"], "relation": t["relation"], "target": t["object"]}
+        for t in triples
+    ]
+    node_names = {t["subject"] for t in triples} | {t["object"] for t in triples}
+    return _json_safe({
+        "entity": entity_name,
+        "nodes": len(node_names),
+        "edges": edges,
+        "triples": triples,
+        "stats": {"facts_used": len(facts), "mode": "fast_neighbors"},
+    })
+
+
 def load_graph_view(
     *,
     entity_name: Optional[str] = None,
@@ -303,9 +332,10 @@ def load_graph_view(
     limit: int = 0,
     role: Optional[str] = None,
     full: bool = False,
+    include_documents: bool = True,
 ) -> Dict[str, Any]:
     store = get_store()
-    documents = _document_counts(store)
+    documents = _document_counts(store) if include_documents else []
 
     if not entity_name and not source_document and not full:
         return _json_safe({
@@ -319,45 +349,33 @@ def load_graph_view(
             },
         })
 
-    fetch_limit: Optional[int] = None if limit == 0 else min(max(limit * 20, limit), int(os.getenv("GRAPH_FETCH_LIMIT", "5000")))
-    facts = store.list_facts(
-        source_document=source_document,
-        query=entity_name,
-        role=role,
-        limit=fetch_limit,
-    )
-    if entity_name and len(facts) < 20:
-        glossary_index = store.build_glossary_index()
-        from services.glossary import normalize_entity
-        canon = normalize_entity(entity_name, index=glossary_index)
-        extra_queries = {entity_name.strip(), canon}
-        for alias_q in extra_queries:
-            if not alias_q:
-                continue
-            extra = store.list_facts(
-                source_document=source_document,
-                query=alias_q,
-                role=role,
-                limit=fetch_limit,
-            )
-            seen = {f.get("id") for f in facts}
-            for f in extra:
-                if f.get("id") not in seen:
-                    facts.append(f)
-        if len(facts) < 20:
-            extra = store.list_facts(
-                source_document=source_document,
-                role=role,
-                limit=fetch_limit,
-            )
-            seen = {f.get("id") for f in facts}
-            for f in extra:
-                if f.get("id") not in seen:
-                    facts.append(f)
+    max_fetch = int(os.getenv("GRAPH_FETCH_LIMIT", "5000"))
+    if entity_name:
+        if limit > 0:
+            fetch_limit = min(max(limit * 5, 40), 500)
+        else:
+            fetch_limit = min(max_fetch, 1500)
+        facts = store.list_entity_neighbor_facts(
+            entity_name,
+            limit=fetch_limit,
+            role=role,
+        )
+        if source_document:
+            facts = [f for f in facts if f.get("source_document") == source_document]
+    else:
+        fetch_limit: Optional[int] = None if limit == 0 else min(max(limit * 20, limit), max_fetch)
+        facts = store.list_facts(
+            source_document=source_document,
+            role=role,
+            limit=fetch_limit,
+        )
+
+    neighbor_limit = limit if entity_name and limit > 0 else None
     view = build_graph_view(
         facts,
         entity_name=entity_name,
         limit=limit,
+        neighbor_edge_limit=neighbor_limit,
     )
     view["source_document"] = source_document
     view["documents"] = documents

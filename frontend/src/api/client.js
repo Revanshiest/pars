@@ -148,6 +148,59 @@ export const api = {
     return request(`/api/v1/analytics/gaps?${q}`, auth)
   },
 
+  async knowledgeGapsStream(auth, params = {}, { signal, onEvent } = {}) {
+    const hasBody = params.query || params.material || params.process || params.climate
+      || params.domain !== undefined
+    const usePost = hasBody && !params.auto && (params.material || params.process || params.climate || params.query)
+    let url = `${API_BASE}/api/v1/analytics/gaps/stream`
+    const opts = {
+      method: usePost ? 'POST' : 'GET',
+      headers: {
+        ...headers(auth.apiKey, auth.token),
+        Accept: 'application/x-ndjson',
+      },
+      signal,
+    }
+    if (usePost) {
+      opts.headers['Content-Type'] = 'application/json'
+      opts.body = JSON.stringify({ auto: false, ...params })
+    } else {
+      const q = new URLSearchParams()
+      Object.entries({ auto: true, ...params }).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') q.set(k, String(v))
+      })
+      url = `${url}?${q}`
+    }
+    const res = await fetch(url, opts)
+    if (!res.ok) {
+      let detail = res.statusText
+      try {
+        const err = await res.json()
+        detail = err.detail || JSON.stringify(err)
+      } catch { /* ignore */ }
+      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+    }
+    const reader = res.body?.getReader()
+    if (!reader) throw new Error('Streaming not supported')
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (!line.trim()) continue
+        const event = JSON.parse(line)
+        onEvent?.(event)
+      }
+    }
+    if (buffer.trim()) {
+      onEvent?.(JSON.parse(buffer))
+    }
+  },
+
   searchExamples: (auth) => request('/api/v1/search/examples', auth),
 
   ontologyGaps: (auth, body) =>

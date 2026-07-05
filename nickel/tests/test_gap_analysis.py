@@ -48,6 +48,30 @@ def test_analyze_scenario_gap():
     assert result["is_gap"] is True
 
 
+def test_iter_ontology_gaps_yields_progressively(tmp_platform_db):
+    from services.gap_analysis import iter_ontology_gaps
+
+    store = __import__("services.store", fromlist=["get_store"]).get_store()
+    store.upsert_facts([
+        {
+            "subject": "никель",
+            "subject_type": "Material",
+            "relation": "uses_material",
+            "object": "выщелачивание",
+            "object_type": "Process",
+            "geography": "RU",
+            "properties": {},
+        },
+    ], job_id="j1", source_document="demo.pdf", shacl_valid=True)
+
+    events = list(iter_ontology_gaps(auto=True))
+    assert events[0]["type"] == "start"
+    assert events[-1]["type"] == "done"
+    items = [e for e in events if e["type"] == "item"]
+    assert len(items) == events[0]["total"]
+    assert events[-1]["scenarios_analyzed"] == len(items)
+
+
 def test_parse_gap_query_glossary():
     parsed = parse_gap_query("электроэкстракция никеля в холодном климате")
     assert parsed.get("material") or parsed.get("process") or parsed.get("climate")

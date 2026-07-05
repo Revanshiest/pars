@@ -277,6 +277,69 @@ class FactsMixin:
             "items": facts,
         }
 
+    def _fact_row_light(self, row: sqlite3.Row) -> Dict:
+        """Строка факта без enrich_fact — для быстрого обхода графа."""
+        d = dict(row)
+        d["properties"] = json.loads(d["properties"])
+        return d
+
+    def _entity_match_terms(self, entity_name: str, *, max_terms: int = 8) -> List[str]:
+        raw = entity_name.strip()
+        if not raw:
+            return []
+        terms = {raw.lower()}
+        idx = getattr(self, "_glossary_index_cache", None)
+        if idx is not None:
+            canon = idx.get(raw.lower())
+            if canon:
+                terms.add(canon.lower())
+        else:
+            for t in self.list_glossary(q=raw, limit=4):
+                canonical = (t.get("canonical") or "").strip()
+                if canonical:
+                    terms.add(canonical.lower())
+                for syn in (t.get("synonyms_ru") or [])[:3] + (t.get("synonyms_en") or [])[:3]:
+                    if syn:
+                        terms.add(str(syn).lower())
+        return [t for t in terms if t][:max_terms]
+
+    def list_entity_neighbor_facts(
+        self,
+        entity_name: str,
+        *,
+        limit: int = 24,
+        role: Optional[str] = None,
+    ) -> List[Dict]:
+        """Соседи сущности в графе: один SQL-запрос, без enrich_fact."""
+        terms = self._entity_match_terms(entity_name)
+        if not terms:
+            return []
+
+        match_sql = " OR ".join(
+            "(LOWER(subject) LIKE ? OR LOWER(object) LIKE ?)" for _ in terms
+        )
+        params: list = []
+        for term in terms:
+            pat = f"%{term}%"
+            params.extend([pat, pat])
+
+        sql = f"SELECT * FROM verified_facts WHERE ({match_sql})"
+        if role == "external_partner":
+            access_map = self.get_document_access_map()
+            allowed = [s for s, lvl in access_map.items() if lvl in ("partner", "public")]
+            if not allowed:
+                return []
+            placeholders = ",".join("?" * len(allowed))
+            sql += f" AND source_document IN ({placeholders})"
+            params.extend(allowed)
+
+        sql += " ORDER BY COALESCE(confidence, 0) DESC, updated_at DESC LIMIT ?"
+        params.append(max(1, min(limit, 120)))
+
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            return [self._fact_row_light(r) for r in rows]
+
     def list_facts(
         self,
         status: Optional[str] = None,
@@ -292,6 +355,7 @@ class FactsMixin:
         query: Optional[str] = None,
         role: Optional[str] = None,
         limit: Optional[int] = 100,
+        light: bool = False,
     ) -> List[Dict]:
         sql = "SELECT * FROM verified_facts WHERE 1=1"
         params: list = []
@@ -348,7 +412,8 @@ class FactsMixin:
             params.append(limit)
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
-            return [self._fact_row(r) for r in rows]
+            parse = self._fact_row_light if light else self._fact_row
+            return [parse(r) for r in rows]
 
     def search_facts(
         self,

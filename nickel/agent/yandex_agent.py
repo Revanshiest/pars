@@ -90,25 +90,11 @@ class YandexKnowledgeAgent:
         limit: int = 20,
         role: Optional[str] = None,
     ) -> Dict[str, Any]:
-        from services.graph_view import load_graph_view, view_to_triples
+        from services.graph_view import explore_entity_neighbors
         if not entity_name.strip():
             return {"entity": entity_name, "edges": [], "triples": []}
         try:
-            view = load_graph_view(entity_name=entity_name, limit=limit, role=role)
-            triples = view_to_triples(view)
-            edges = []
-            for t in triples[:limit]:
-                edges.append({
-                    "source": t["subject"],
-                    "relation": t["relation"],
-                    "target": t["object"],
-                })
-            return {
-                "entity": entity_name,
-                "nodes": len(view.get("nodes", [])),
-                "edges": edges,
-                "triples": triples[:limit],
-            }
+            return explore_entity_neighbors(entity_name, limit=min(limit, 12), role=role)
         except Exception as exc:
             return {"entity": entity_name, "error": str(exc), "edges": []}
 

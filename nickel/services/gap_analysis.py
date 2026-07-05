@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from services.glossary import expand_query_with_glossary
 from services.neo4j_loader import Neo4jLoader
@@ -50,10 +50,6 @@ def _expand_terms(terms: List[str]) -> List[str]:
     return result
 
 
-def _fact_matches_dimension(fact: Dict[str, Any], terms: List[str]) -> bool:
-    return _matches_terms(_text_blob(fact), _expand_terms(terms))
-
-
 def enrich_fact_brief(f: Dict[str, Any]) -> Dict[str, Any]:
     props = f.get("properties") or {}
     return {
@@ -83,22 +79,46 @@ def _gap_recommendation(scenario: Dict, missing: List[str], full: List, partial:
     return f"Комбинация «{label}» покрыта ({len(full)} связующих фактов)."
 
 
-def analyze_scenario(facts: List[Dict[str, Any]], scenario: Dict[str, Any]) -> Dict[str, Any]:
+def _fact_matches_dimension(
+    fact: Dict[str, Any],
+    terms: List[str],
+    *,
+    blob: Optional[str] = None,
+) -> bool:
+    text = blob if blob is not None else _text_blob(fact)
+    expanded = _expand_terms(terms)
+    return any(term.lower() in text for term in expanded if term)
+
+
+def analyze_scenario(
+    facts: List[Dict[str, Any]],
+    scenario: Dict[str, Any],
+    *,
+    include_graph_paths: bool = False,
+    fact_blobs: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    if fact_blobs is None:
+        fact_blobs = [_text_blob(f) for f in facts]
+
     dimensions = scenario["dimensions"]
     dim_coverage: Dict[str, List[Dict]] = {}
     for dim_name, terms in dimensions.items():
-        dim_coverage[dim_name] = [f for f in facts if _fact_matches_dimension(f, terms)]
+        dim_coverage[dim_name] = [
+            facts[i] for i, blob in enumerate(fact_blobs)
+            if _fact_matches_dimension(facts[i], terms, blob=blob)
+        ]
 
     dim_counts = {k: len(v) for k, v in dim_coverage.items()}
     all_dims = list(dimensions.keys())
 
     full_overlap = [
-        f for f in facts
-        if all(_fact_matches_dimension(f, dimensions[d]) for d in all_dims)
+        facts[i] for i, blob in enumerate(fact_blobs)
+        if all(_fact_matches_dimension(facts[i], dimensions[d], blob=blob) for d in all_dims)
     ]
     partial = [
-        f for f in facts
-        if sum(1 for d in all_dims if _fact_matches_dimension(f, dimensions[d])) >= max(2, len(all_dims) - 1)
+        facts[i] for i, blob in enumerate(fact_blobs)
+        if sum(1 for d in all_dims if _fact_matches_dimension(facts[i], dimensions[d], blob=blob))
+        >= max(2, len(all_dims) - 1)
     ]
 
     missing = [d for d in all_dims if dim_counts[d] == 0]
@@ -109,13 +129,14 @@ def analyze_scenario(facts: List[Dict[str, Any]], scenario: Dict[str, Any]) -> D
         gap_severity = "high" if not partial else "medium"
 
     graph_paths = 0
-    try:
-        anchor = dim_coverage.get("Material") or dim_coverage.get("Process") or []
-        if anchor:
-            with Neo4jLoader() as loader:
-                graph_paths = len(loader.search_neighbors(anchor[0]["subject"], depth=2))
-    except Exception:
-        pass
+    if include_graph_paths:
+        try:
+            anchor = dim_coverage.get("Material") or dim_coverage.get("Process") or []
+            if anchor:
+                with Neo4jLoader() as loader:
+                    graph_paths = len(loader.search_neighbors(anchor[0]["subject"], depth=2))
+        except Exception:
+            pass
 
     return {
         "scenario_id": scenario["id"],
@@ -358,17 +379,25 @@ def build_suggested_presets(analyzed: List[Dict[str, Any]], limit: int = 6) -> L
     return presets
 
 
-def find_ontology_gaps(
+def _sort_analyzed(analyzed: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    analyzed.sort(key=lambda x: (
+        0 if x.get("is_gap") else 1,
+        0 if x.get("gap_severity") == "critical" else 1,
+        -len(x.get("missing_dimensions") or []),
+    ))
+    return analyzed
+
+
+def _build_gap_scenarios(
+    facts: List[Dict[str, Any]],
+    *,
     query: Optional[str] = None,
     material: Optional[str] = None,
     process: Optional[str] = None,
     climate: Optional[str] = None,
     domain: Optional[str] = None,
     auto: bool = False,
-) -> Dict[str, Any]:
-    store = get_store()
-    facts = store.list_facts(limit=2000)
-
+) -> Tuple[List[Dict[str, Any]], bool, Optional[str], Optional[str], Optional[str], Optional[str]]:
     if query and not (material or process or climate):
         parsed = parse_gap_query(query)
         material = material or parsed.get("material")
@@ -376,6 +405,7 @@ def find_ontology_gaps(
         climate = climate or parsed.get("climate")
 
     scenarios: List[Dict[str, Any]] = []
+    auto_discovered = auto or not query
 
     if material or process or climate:
         scenarios.append(_build_custom_scenario(query, material, process, climate))
@@ -398,12 +428,91 @@ def find_ontology_gaps(
         if filtered:
             scenarios = filtered
 
-    analyzed = [analyze_scenario(facts, s) for s in scenarios]
-    analyzed.sort(key=lambda x: (
-        0 if x.get("is_gap") else 1,
-        0 if x.get("gap_severity") == "critical" else 1,
-        -len(x.get("missing_dimensions") or []),
-    ))
+    return scenarios, auto_discovered, query, domain, material, process
+
+
+def iter_ontology_gaps(
+    query: Optional[str] = None,
+    material: Optional[str] = None,
+    process: Optional[str] = None,
+    climate: Optional[str] = None,
+    domain: Optional[str] = None,
+    auto: bool = False,
+) -> Iterator[Dict[str, Any]]:
+    """Постепенный анализ пробелов — по одному сценарию за yield."""
+    store = get_store()
+    facts = store.list_facts(limit=2000, light=True)
+    fact_blobs = [_text_blob(f) for f in facts]
+    scenarios, auto_discovered, query, domain, material, process = _build_gap_scenarios(
+        facts,
+        query=query,
+        material=material,
+        process=process,
+        climate=climate,
+        domain=domain,
+        auto=auto,
+    )
+    total = len(scenarios)
+    yield {
+        "type": "start",
+        "total": total,
+        "query": query,
+        "domain": domain,
+        "auto_discovered": auto_discovered,
+    }
+
+    analyzed: List[Dict[str, Any]] = []
+    for idx, scenario in enumerate(scenarios):
+        result = analyze_scenario(facts, scenario, fact_blobs=fact_blobs)
+        analyzed.append(result)
+        yield {
+            "type": "item",
+            "index": idx + 1,
+            "total": total,
+            "gap": result,
+        }
+
+    analyzed = _sort_analyzed(analyzed)
+    critical = [a for a in analyzed if a.get("is_gap")]
+
+    from services.analytics import _compute_legacy_heuristics
+
+    yield {
+        "type": "done",
+        "scenarios_analyzed": len(analyzed),
+        "critical_gaps": len(critical),
+        "ontology_gaps": analyzed,
+        "suggested_presets": build_suggested_presets(analyzed),
+        "legacy_heuristics": _compute_legacy_heuristics(domain, facts[:500]),
+    }
+
+
+def find_ontology_gaps(
+    query: Optional[str] = None,
+    material: Optional[str] = None,
+    process: Optional[str] = None,
+    climate: Optional[str] = None,
+    domain: Optional[str] = None,
+    auto: bool = False,
+) -> Dict[str, Any]:
+    store = get_store()
+    facts = store.list_facts(limit=2000, light=True)
+    fact_blobs = [_text_blob(f) for f in facts]
+    scenarios, auto_discovered, query, domain, _, _ = _build_gap_scenarios(
+        facts,
+        query=query,
+        material=material,
+        process=process,
+        climate=climate,
+        domain=domain,
+        auto=auto,
+    )
+
+    analyzed = [
+        analyze_scenario(facts, s, fact_blobs=fact_blobs)
+        for s in scenarios
+    ]
+    analyzed = _sort_analyzed(analyzed)
     critical = [a for a in analyzed if a.get("is_gap")]
 
     from services.analytics import _compute_legacy_heuristics
@@ -411,7 +520,7 @@ def find_ontology_gaps(
     return {
         "query": query,
         "domain": domain,
-        "auto_discovered": auto or not query,
+        "auto_discovered": auto_discovered,
         "scenarios_analyzed": len(analyzed),
         "critical_gaps": len(critical),
         "ontology_gaps": analyzed,

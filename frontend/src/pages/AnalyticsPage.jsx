@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   BarChart3, Loader2, BookOpen, GitCompare, Download, AlertTriangle, Sparkles, RefreshCw,
   Users, Globe2,
@@ -16,6 +16,8 @@ export default function AnalyticsPage() {
   const [tab, setTab] = useState('dashboard')
   const [dashLoading, setDashLoading] = useState(false)
   const [gapsLoading, setGapsLoading] = useState(false)
+  const [gapsProgress, setGapsProgress] = useState(null)
+  const gapsAbortRef = useRef(null)
   const [recsLoading, setRecsLoading] = useState(false)
   const [practicesLoading, setPracticesLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
@@ -31,6 +33,8 @@ export default function AnalyticsPage() {
   const [recs, setRecs] = useState(null)
   const [exportMsg, setExportMsg] = useState('')
 
+  useEffect(() => () => gapsAbortRef.current?.abort(), [])
+
   useEffect(() => {
     if (tab === 'dashboard' && CAN_DASHBOARD.has(user?.role)) {
       setDashLoading(true)
@@ -42,22 +46,73 @@ export default function AnalyticsPage() {
   }, [tab, auth, user?.role])
 
   const runGaps = useCallback(async (preset = { auto: true }) => {
+    gapsAbortRef.current?.abort()
+    const controller = new AbortController()
+    gapsAbortRef.current = controller
+
     setGapsLoading(true)
+    setGapsProgress(null)
     setError('')
+    setGaps({ ontology_gaps: [], scenarios_analyzed: 0, critical_gaps: 0 })
+
+    const params = preset.query
+      ? { query: preset.query, auto: false }
+      : preset.material || preset.process || preset.climate
+        ? { ...preset, auto: false }
+        : { auto: true, ...preset }
+
     try {
-      const data = preset.query
-        ? await api.knowledgeGaps(auth, { query: preset.query, auto: false })
-        : preset.material || preset.process || preset.climate
-          ? await api.ontologyGaps(auth, { ...preset, auto: false })
-          : await api.knowledgeGaps(auth, { auto: true, ...preset })
-      setGaps(data)
-      if (data?.suggested_presets?.length) {
-        setGapPresets(data.suggested_presets)
-      }
+      await api.knowledgeGapsStream(auth, params, {
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (event.type === 'start') {
+            setGapsProgress({ index: 0, total: event.total || 0 })
+            setGaps(prev => ({
+              ...prev,
+              query: event.query,
+              domain: event.domain,
+              auto_discovered: event.auto_discovered,
+              scenarios_analyzed: event.total,
+            }))
+          } else if (event.type === 'item') {
+            setGapsProgress({ index: event.index, total: event.total })
+            setGaps(prev => {
+              const list = [...(prev?.ontology_gaps || []), event.gap]
+              list.sort((a, b) => {
+                if (a.is_gap !== b.is_gap) return a.is_gap ? -1 : 1
+                if (a.gap_severity === 'critical' && b.gap_severity !== 'critical') return -1
+                if (b.gap_severity === 'critical' && a.gap_severity !== 'critical') return 1
+                return (b.missing_dimensions?.length || 0) - (a.missing_dimensions?.length || 0)
+              })
+              return { ...prev, ontology_gaps: list }
+            })
+          } else if (event.type === 'done') {
+            setGaps(prev => ({
+              ...prev,
+              scenarios_analyzed: event.scenarios_analyzed,
+              critical_gaps: event.critical_gaps,
+              ontology_gaps: event.ontology_gaps || prev?.ontology_gaps || [],
+              suggested_presets: event.suggested_presets,
+              legacy_heuristics: event.legacy_heuristics,
+            }))
+            if (event.suggested_presets?.length) {
+              setGapPresets(event.suggested_presets)
+            }
+            setGapsProgress(null)
+          } else if (event.type === 'error') {
+            throw new Error(event.message || 'Ошибка анализа пробелов')
+          }
+        },
+      })
     } catch (e) {
-      setError(e.message)
+      if (e.name !== 'AbortError') {
+        setError(e.message)
+      }
     } finally {
-      setGapsLoading(false)
+      if (gapsAbortRef.current === controller) {
+        setGapsLoading(false)
+        gapsAbortRef.current = null
+      }
     }
   }, [auth])
 
@@ -261,16 +316,28 @@ export default function AnalyticsPage() {
               ))}
             </div>
           )}
-          {gapsLoading && <Loader2 className="animate-spin-slow text-brand-600" />}
+          {gapsLoading && (
+            <div className="flex items-center gap-2 text-sm text-surface-400">
+              <Loader2 size={16} className="animate-spin-slow shrink-0" />
+              {gapsProgress?.total
+                ? `Анализ сценариев: ${gapsProgress.index} / ${gapsProgress.total}…`
+                : 'Подготовка анализа…'}
+            </div>
+          )}
           {!gapsLoading && gaps && !(gaps.ontology_gaps?.length) && (
             <p className="text-sm text-surface-400">Сценарии не найдены — загрузите документы с процессами и материалами.</p>
           )}
-          {gaps && (
+          {gaps && (gaps.ontology_gaps?.length > 0 || gapsLoading) && (
             <div className="card p-5 space-y-3">
               <p className="text-xs text-surface-500">
-                Проанализировано сценариев: {gaps.scenarios_analyzed ?? '—'} · критических пробелов: {gaps.critical_gaps ?? 0}
+                Проанализировано сценариев: {gaps.scenarios_analyzed ?? '—'}
+                {gapsProgress?.total
+                  ? ` · в процессе: ${gapsProgress.index}/${gapsProgress.total}`
+                  : ''}
+                {' · '}
+                критических пробелов: {gaps.critical_gaps ?? (gaps.ontology_gaps || []).filter(g => g.is_gap).length}
               </p>
-              {(gaps.ontology_gaps || []).slice(0, 8).map((g, idx) => (
+              {(gaps.ontology_gaps || []).map((g, idx) => (
                 <div key={g.scenario_id || g.label || idx} className="border-b border-surface-800 pb-3 last:border-0">
                   <h3 className="text-sm font-bold text-surface-100">{g.label}</h3>
                   <p className={clsx('text-sm mt-1', g.is_gap ? 'text-amber-600' : 'text-emerald-600')}>
