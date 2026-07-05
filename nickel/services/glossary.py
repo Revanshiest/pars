@@ -9,9 +9,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from services.store import get_store
-
+from services.glossary_quality import clean_glossary_display, is_worthy_glossary_term, term_language
 from services.platform_config import default_confidence, glossary_similarity_threshold
+from services.store import get_store
 from services.geography import detect_geography as _detect_geography_impl
 
 ProgressCallback = Callable[[int, int, Optional[str]], None]
@@ -179,13 +179,14 @@ def normalize_triples(
         if auto_learn:
             for name, etype in [(t["subject"], t["subject_type"]), (t["object"], t["object_type"])]:
                 nkey = name.lower()
-                if nkey not in index and len(name) > 2:
+                if nkey not in index and is_worthy_glossary_term(name):
+                    is_ru = term_language(name) == "ru"
                     pending_terms.append({
                         "canonical": name,
                         "synonyms_ru": [],
                         "synonyms_en": [],
                         "domain": etype,
-                        "definition": "Автоматически извлечено из документа",
+                        "definition": None,
                     })
                     index[nkey] = name
                     stats["new_terms"] += 1

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BookOpen, Loader2, Plus, RefreshCw, Search, Sparkles } from 'lucide-react'
-import clsx from 'clsx'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../api/client'
 
@@ -13,17 +12,28 @@ function displayDefinition(definition) {
   return definition
 }
 
-function SynonymList({ items, lang }) {
-  if (!items?.length) return <span className="text-surface-400">—</span>
-  return (
-    <div className="flex flex-wrap gap-1">
-      {items.map(s => (
-        <span key={s} className="badge bg-surface-900 text-surface-300 border border-surface-700 text-[10px]">
-          {lang && <span className="opacity-50 mr-0.5">{lang}</span>}{s}
-        </span>
-      ))}
-    </div>
-  )
+function languageLabel(term) {
+  const ru = term.primary_lang === 'ru' || (term.synonyms_ru?.length > 0)
+  const en = term.primary_lang === 'en' || (term.synonyms_en?.length > 0)
+  if (ru && en) return 'RU / EN'
+  if (ru) return 'RU'
+  return 'EN'
+}
+
+function otherLanguageSynonyms(term) {
+  if (term.primary_lang === 'ru' && term.synonyms_en?.length) {
+    return { lang: 'EN', items: term.synonyms_en }
+  }
+  if (term.primary_lang === 'en' && term.synonyms_ru?.length) {
+    return { lang: 'RU', items: term.synonyms_ru }
+  }
+  if (term.synonyms_ru?.length && term.synonyms_en?.length) {
+    return {
+      lang: 'RU / EN',
+      items: [...term.synonyms_ru, ...term.synonyms_en],
+    }
+  }
+  return null
 }
 
 export default function GlossaryPage() {
@@ -125,7 +135,7 @@ export default function GlossaryPage() {
             Глоссарий
           </h2>
           <p className="text-xs text-surface-400 mt-1">
-            Термины и синонимы для единообразного поиска по отраслевым документам
+            Канонический термин и язык; переводы — под термином
           </p>
         </div>
         <div className="flex gap-2">
@@ -253,33 +263,41 @@ export default function GlossaryPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-surface-400 border-b border-surface-700">
-                  <th className="pb-2 pr-3 font-medium">Термин</th>
-                  <th className="pb-2 pr-3 font-medium">Домен</th>
-                  <th className="pb-2 pr-3 font-medium">RU</th>
-                  <th className="pb-2 pr-3 font-medium">EN</th>
+                  <th className="pb-2 pr-4 font-medium">Термин</th>
+                  <th className="pb-2 pr-4 font-medium w-32">Домен</th>
+                  <th className="pb-2 font-medium w-24">Язык</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-800">
                 {terms.map(t => {
                   const def = displayDefinition(t.definition)
+                  const label = t.display || t.canonical
+                  const alt = otherLanguageSynonyms(t)
+                  const lang = languageLabel(t)
                   return (
                   <tr key={t.id} className="align-top">
-                    <td className="py-3 pr-3">
-                      <div className="font-semibold text-surface-100">{t.canonical}</div>
+                    <td className="py-3 pr-4">
+                      <div className="font-medium text-surface-100">{label}</div>
+                      {alt && (
+                        <p className="text-xs text-surface-500 mt-1">
+                          {alt.lang}: {alt.items.join(' · ')}
+                        </p>
+                      )}
                       {def && (
-                        <p className="text-xs text-surface-400 mt-1 max-w-xs">{def}</p>
+                        <p className="text-xs text-surface-500 mt-1 max-w-md leading-relaxed">{def}</p>
                       )}
                     </td>
-                    <td className="py-3 pr-3">
+                    <td className="py-3 pr-4">
                       {t.domain ? (
-                        <span className={clsx('badge border bg-brand-100 text-brand-700 border-brand-200')}>{t.domain}</span>
-                      ) : '—'}
+                        <span className="text-xs text-surface-400">{t.domain}</span>
+                      ) : (
+                        <span className="text-surface-600">—</span>
+                      )}
                     </td>
-                    <td className="py-3 pr-3 max-w-[180px]">
-                      <SynonymList items={t.synonyms_ru} />
-                    </td>
-                    <td className="py-3 pr-3 max-w-[180px]">
-                      <SynonymList items={t.synonyms_en} />
+                    <td className="py-3 text-sm">
+                      <span className="text-xs font-semibold tracking-wide text-surface-300 uppercase">
+                        {lang}
+                      </span>
                     </td>
                   </tr>
                   )

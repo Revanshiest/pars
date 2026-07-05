@@ -8,6 +8,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from services.glossary_quality import clean_glossary_display, is_worthy_glossary_term, term_language
+
 
 class GlossaryMixin:
     """Глоссарий и его индекс. Композируется в PlatformStore
@@ -33,7 +35,10 @@ class GlossaryMixin:
         params.extend([max(1, min(limit, 1000)), max(0, offset)])
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
-            return [self._glossary_row(r) for r in rows]
+            return [
+                t for t in (self._glossary_row(r) for r in rows)
+                if is_worthy_glossary_term(t.get("canonical", ""))
+            ]
 
     def iter_glossary(self) -> List[Dict]:
         with self._connect() as conn:
@@ -48,22 +53,25 @@ class GlossaryMixin:
             return [r["domain"] for r in rows]
 
     def count_glossary(self, domain: Optional[str] = None, q: Optional[str] = None) -> int:
-        sql = "SELECT COUNT(*) AS c FROM glossary WHERE 1=1"
-        params: list = []
-        if domain:
-            sql += " AND domain=?"
-            params.append(domain)
-        if q:
-            sql += " AND (canonical LIKE ? OR synonyms_ru LIKE ? OR synonyms_en LIKE ? OR definition LIKE ?)"
-            params.extend([f"%{q}%"] * 4)
-        with self._connect() as conn:
-            row = conn.execute(sql, params).fetchone()
-            return int(row["c"]) if row else 0
+        return len(self.list_glossary(domain=domain, q=q, limit=10000, offset=0))
 
     def _glossary_row(self, row: sqlite3.Row) -> Dict:
         d = dict(row)
         d["synonyms_ru"] = json.loads(d["synonyms_ru"])
         d["synonyms_en"] = json.loads(d["synonyms_en"])
+        canonical = d.get("canonical") or ""
+        display = clean_glossary_display(canonical)
+        d["display"] = display
+        d["primary_lang"] = term_language(display)
+        canon_key = display.lower()
+        d["synonyms_ru"] = [
+            s for s in dict.fromkeys(d["synonyms_ru"])
+            if s and s.lower() != canon_key
+        ]
+        d["synonyms_en"] = [
+            s for s in dict.fromkeys(d["synonyms_en"])
+            if s and s.lower() != canon_key
+        ]
         return d
 
     def add_glossary_term(self, term: Dict[str, Any], source: str = "manual") -> str:

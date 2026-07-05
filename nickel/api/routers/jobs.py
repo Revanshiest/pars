@@ -73,7 +73,16 @@ async def cancel_job(job_id: str, user=Depends(get_current_user)):
         raise HTTPException(404, Msg.JOB_NOT_FOUND)
     if job["status"] not in ("pending", "running"):
         raise HTTPException(409, Msg.JOB_ALREADY_DONE)
-    cancel_running(job_id)
-    job_store.cancel_job(job_id, Msg.JOB_CANCELLED)
+
+    def _cancel_one(jid: str) -> None:
+        cancel_running(jid)
+        job_store.cancel_job(jid, Msg.JOB_CANCELLED)
+
+    _cancel_one(job_id)
+    if job.get("job_type") == "batch":
+        for child in job_store.list_jobs(limit=500, batch_id=job_id):
+            if child["status"] in ("pending", "running"):
+                _cancel_one(child["id"])
+
     audit_action(user, "job.cancel", job_id, {"filename": job.get("filename")})
     return JobResponse(**job_store.get_job(job_id))

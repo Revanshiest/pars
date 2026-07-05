@@ -9,7 +9,7 @@ from pathlib import Path
 
 from api.jobs import JobStore
 from agent.yandex_agent import YandexKnowledgeAgent
-from services.job_cancel import JobCancelled, clear, register
+from services.job_cancel import JobCancelled, clear, is_cancelled, register
 from services.logging_config import get_logger
 from services.pipeline_runner import run_full_pipeline
 from services.user_messages import Msg
@@ -88,68 +88,79 @@ async def _run_batch_job(
         job_store.complete_job(batch_id, {"files_processed": 0, "folder": str(folder)})
         return
 
+    register(batch_id)
     done, failed = 0, 0
     child_results = []
-    for idx, filepath in enumerate(files, start=1):
-        child_id = job_store.create_job(
-            filepath.name,
-            str(filepath),
-            job_type="single",
-            batch_id=batch_id,
-            created_by=job_store.get_job(batch_id).get("created_by"),
-        )
-        job_store.append_log(
-            batch_id,
-            f"[{idx}/{total}] Старт: {filepath.name}",
-            stage="batch",
-        )
-
-        def on_progress(stage, current, progress_total, message=None, _cid=child_id):
-            job_store.update_progress(_cid, stage, current, progress_total, message)
-
-        try:
-            job_store.update_progress(child_id, "starting", 0, 1, "Подготовка")
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                _pipeline_executor,
-                _run_pipeline_in_thread,
+    try:
+        for idx, filepath in enumerate(files, start=1):
+            if is_cancelled(batch_id):
+                raise JobCancelled("batch cancelled")
+            child_id = job_store.create_job(
+                filepath.name,
                 str(filepath),
-                child_id,
-                extractor_backend,
-                on_progress,
+                job_type="single",
+                batch_id=batch_id,
+                created_by=job_store.get_job(batch_id).get("created_by"),
             )
-            job_store.complete_job(child_id, result)
-            done += 1
-            child_results.append({"file": filepath.name, "status": "completed", "job_id": child_id})
-            job_store.append_log(batch_id, f"✓ {filepath.name}", stage="batch", level="success")
-        except JobCancelled:
-            job_store.fail_job(child_id, Msg.JOB_CANCELLED)
-            failed += 1
-            child_results.append({"file": filepath.name, "status": "cancelled", "job_id": child_id})
-        except Exception as e:
-            logger.exception("Batch child %s failed: %s", child_id, e)
-            job_store.fail_job(child_id, str(e))
-            failed += 1
-            child_results.append({"file": filepath.name, "status": "failed", "error": str(e), "job_id": child_id})
-            job_store.append_log(batch_id, f"✗ {filepath.name}", stage="batch", level="error")
+            job_store.append_log(
+                batch_id,
+                f"[{idx}/{total}] Старт: {filepath.name}",
+                stage="batch",
+            )
 
-        job_store.update_batch_stats(batch_id, done, failed, total)
-        job_store.update_progress(
-            batch_id,
-            "batch",
-            done + failed,
-            total,
-            f"Обработано {done + failed} из {total}",
-        )
+            def on_progress(stage, current, progress_total, message=None, _cid=child_id):
+                job_store.update_progress(_cid, stage, current, progress_total, message)
 
-    summary = {
-        "folder": str(folder),
-        "files_total": total,
-        "files_done": done,
-        "files_failed": failed,
-        "children": child_results,
-    }
-    if failed == total:
-        job_store.fail_job(batch_id, f"Не удалось обработать ни одного файла из {total}")
-    else:
-        job_store.complete_job(batch_id, summary)
+            try:
+                job_store.update_progress(child_id, "starting", 0, 1, "Подготовка")
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    _pipeline_executor,
+                    _run_pipeline_in_thread,
+                    str(filepath),
+                    child_id,
+                    extractor_backend,
+                    on_progress,
+                )
+                job_store.complete_job(child_id, result)
+                done += 1
+                child_results.append({"file": filepath.name, "status": "completed", "job_id": child_id})
+                job_store.append_log(batch_id, f"✓ {filepath.name}", stage="batch", level="success")
+            except JobCancelled:
+                job_store.fail_job(child_id, Msg.JOB_CANCELLED)
+                failed += 1
+                child_results.append({"file": filepath.name, "status": "cancelled", "job_id": child_id})
+                if is_cancelled(batch_id):
+                    raise JobCancelled("batch cancelled")
+            except Exception as e:
+                logger.exception("Batch child %s failed: %s", child_id, e)
+                job_store.fail_job(child_id, str(e))
+                failed += 1
+                child_results.append({"file": filepath.name, "status": "failed", "error": str(e), "job_id": child_id})
+                job_store.append_log(batch_id, f"✗ {filepath.name}", stage="batch", level="error")
+
+            job_store.update_batch_stats(batch_id, done, failed, total)
+            job_store.update_progress(
+                batch_id,
+                "batch",
+                done + failed,
+                total,
+                f"Обработано {done + failed} из {total}",
+            )
+
+        summary = {
+            "folder": str(folder),
+            "files_total": total,
+            "files_done": done,
+            "files_failed": failed,
+            "children": child_results,
+        }
+        if failed == total:
+            job_store.fail_job(batch_id, f"Не удалось обработать ни одного файла из {total}")
+        else:
+            job_store.complete_job(batch_id, summary)
+    except JobCancelled:
+        logger.info("Batch %s cancelled by user", batch_id)
+        job_store.fail_job(batch_id, Msg.JOB_CANCELLED)
+    finally:
+        clear(batch_id)

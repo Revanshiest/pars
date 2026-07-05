@@ -28,9 +28,12 @@ router = APIRouter()
 async def semantic_search(req: SemanticSearchRequest, user=Depends(get_current_user)):
     check_permission(user, "search")
     from services.health import is_degraded_ok
+    from services.hybrid_search import search_use_vectors
 
-    if not is_degraded_ok("search_vector"):
+    if search_use_vectors() and not is_degraded_ok("search_vector"):
         raise HTTPException(503, Msg.VECTOR_SEARCH_DOWN)
+    if not is_degraded_ok("glossary"):
+        raise HTTPException(503, Msg.SEARCH_UNAVAILABLE)
     audit_action(user, "search.semantic", details={"query": req.query})
     from services.search_filters import filtered_search
     from services.search_runtime import run_search

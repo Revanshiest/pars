@@ -22,6 +22,7 @@ class JobStatus(str, Enum):
 
 
 ACTIVE_STATUSES = (JobStatus.PENDING.value, JobStatus.RUNNING.value)
+TERMINAL_STATUSES = (JobStatus.COMPLETED.value, JobStatus.FAILED.value)
 
 
 class JobStore:
@@ -180,6 +181,9 @@ class JobStore:
     ):
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
+            row = conn.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row or row["status"] in TERMINAL_STATUSES:
+                return
             conn.execute(
                 """UPDATE jobs SET status=?, stage=?, progress_current=?, progress_total=?,
                    message=?, updated_at=? WHERE id=?""",
@@ -191,6 +195,9 @@ class JobStore:
     def complete_job(self, job_id: str, result: Dict[str, Any]):
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
+            row = conn.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row or row["status"] in TERMINAL_STATUSES:
+                return
             conn.execute(
                 """UPDATE jobs SET status=?, result=?, updated_at=?, stage='done',
                    progress_current=1, progress_total=1, message=? WHERE id=?""",
@@ -207,6 +214,9 @@ class JobStore:
     def fail_job(self, job_id: str, error: str):
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
+            row = conn.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row or row["status"] in TERMINAL_STATUSES:
+                return
             conn.execute(
                 """UPDATE jobs SET status=?, error=?, updated_at=?, message=? WHERE id=?""",
                 (JobStatus.FAILED.value, error, now, error, job_id),

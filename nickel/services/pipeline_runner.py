@@ -67,10 +67,40 @@ def _chunk_document(markdown_document: str, filepath: str) -> List[Dict[str, Any
     return chunks
 
 
+async def _await_with_cancel(job_id: str, coro, timeout: float):
+    """Ждёт coroutine, периодически проверяя флаг отмены задачи."""
+    import time
+    from services.job_cancel import JobCancelled, check
+
+    task = asyncio.create_task(coro)
+    deadline = time.monotonic() + timeout
+    try:
+        while not task.done():
+            check(job_id)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                raise asyncio.TimeoutError()
+            await asyncio.wait({task}, timeout=min(0.5, remaining))
+        return task.result()
+    except JobCancelled:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        raise
+
+
 async def _extract_from_text_document(
     filepath: str,
     extractor,
     on_progress: Optional[ProgressCallback],
+    job_id: Optional[str] = None,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], str]:
     markdown = await _read_document(filepath)
     chunks = _chunk_document(markdown, filepath)
@@ -94,6 +124,9 @@ async def _extract_from_text_document(
     chunk_index = 0
 
     for i in range(0, len(chunks), batch_size):
+        if job_id:
+            from services.job_cancel import check
+            check(job_id)
         batch = [c for c in chunks[i : i + batch_size] if should_process_chunk(c["text"])]
         if not batch:
             continue
@@ -107,6 +140,12 @@ async def _extract_from_text_document(
             if on_progress:
                 on_progress("extract", global_idx, total_chunks, label)
             try:
+                if job_id:
+                    return await _await_with_cancel(
+                        job_id,
+                        extractor.extract_triples(chunk["text"], chunk["meta_context"]),
+                        chunk_timeout,
+                    )
                 return await asyncio.wait_for(
                     extractor.extract_triples(chunk["text"], chunk["meta_context"]),
                     timeout=chunk_timeout,
@@ -129,7 +168,11 @@ async def _extract_from_text_document(
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
+        from services.job_cancel import JobCancelled
+
         for chunk, res in zip(batch, results):
+            if isinstance(res, JobCancelled):
+                raise res
             if isinstance(res, list):
                 from services.document_metadata import page_from_chunk
                 page = page_from_chunk(chunk)
@@ -243,7 +286,7 @@ async def run_full_pipeline(
 
         progress("ingest", 0, 1, "Чтение документа")
         triple_dicts, chunks, markdown = await _extract_from_text_document(
-            filepath, extractor, on_progress
+            filepath, extractor, on_progress, job_id=job_id
         )
         document_metadata = {
             "source_file": os.path.basename(filepath),

@@ -14,7 +14,11 @@ const CAN_EXPORT = new Set(['analyst', 'project_manager', 'admin'])
 export default function AnalyticsPage() {
   const { auth, user } = useAuth()
   const [tab, setTab] = useState('dashboard')
-  const [loading, setLoading] = useState(false)
+  const [dashLoading, setDashLoading] = useState(false)
+  const [gapsLoading, setGapsLoading] = useState(false)
+  const [recsLoading, setRecsLoading] = useState(false)
+  const [practicesLoading, setPracticesLoading] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState('')
   const [topic, setTopic] = useState('электроэкстракция никеля')
   const [techs, setTechs] = useState('heap leaching, electrowinning, fluidized bed')
@@ -29,16 +33,16 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     if (tab === 'dashboard' && CAN_DASHBOARD.has(user?.role)) {
-      setLoading(true)
+      setDashLoading(true)
       api.dashboard(auth)
         .then(setDashboard)
         .catch(e => setError(e.message))
-        .finally(() => setLoading(false))
+        .finally(() => setDashLoading(false))
     }
   }, [tab, auth, user?.role])
 
   const runGaps = useCallback(async (preset = { auto: true }) => {
-    setLoading(true)
+    setGapsLoading(true)
     setError('')
     try {
       const data = preset.query
@@ -53,20 +57,20 @@ export default function AnalyticsPage() {
     } catch (e) {
       setError(e.message)
     } finally {
-      setLoading(false)
+      setGapsLoading(false)
     }
   }, [auth])
 
   useEffect(() => {
-    if (tab === 'gaps' && !gaps && !loading) {
+    if (tab === 'gaps' && !gaps && !gapsLoading) {
       runGaps({ auto: true })
     }
-  }, [tab, gaps, loading, runGaps])
+  }, [tab, gaps, gapsLoading, runGaps])
 
   const runReview = async (e) => {
     e.preventDefault()
     if (!CAN_SYNTHESIS.has(user?.role)) return
-    setLoading(true)
+    setActionLoading(true)
     setError('')
     try {
       const data = await api.literatureReview(auth, topic, { use_llm: true })
@@ -75,13 +79,13 @@ export default function AnalyticsPage() {
     } catch (e) {
       setError(e.message)
     } finally {
-      setLoading(false)
+      setActionLoading(false)
     }
   }
 
   const runCompare = async (e) => {
     e.preventDefault()
-    setLoading(true)
+    setActionLoading(true)
     setError('')
     try {
       const list = techs.split(',').map(s => s.trim()).filter(Boolean)
@@ -89,35 +93,47 @@ export default function AnalyticsPage() {
     } catch (e) {
       setError(e.message)
     } finally {
-      setLoading(false)
+      setActionLoading(false)
     }
   }
 
-  const runPractices = async (e) => {
-    e.preventDefault()
-    setLoading(true)
+  const runPractices = useCallback(async (e) => {
+    e?.preventDefault?.()
+    setPracticesLoading(true)
     setError('')
     try {
       setPractices(await api.comparePractices(auth, topic))
     } catch (e) {
       setError(e.message)
     } finally {
-      setLoading(false)
+      setPracticesLoading(false)
     }
-  }
+  }, [auth, topic])
 
-  const runRecommendations = async (e) => {
+  useEffect(() => {
+    if (tab === 'practices' && !practices && !practicesLoading) {
+      runPractices()
+    }
+  }, [tab, practices, practicesLoading, runPractices])
+
+  const runRecommendations = useCallback(async (e) => {
     e?.preventDefault?.()
-    setLoading(true)
+    setRecsLoading(true)
     setError('')
     try {
       setRecs(await api.recommendations(auth, topic))
     } catch (e) {
       setError(e.message)
     } finally {
-      setLoading(false)
+      setRecsLoading(false)
     }
-  }
+  }, [auth, topic])
+
+  useEffect(() => {
+    if (tab === 'recs' && !recs && !recsLoading) {
+      runRecommendations()
+    }
+  }, [tab, recs, recsLoading, runRecommendations])
 
   const doExport = async (format) => {
     setExportMsg('')
@@ -159,7 +175,7 @@ export default function AnalyticsPage() {
 
       {tab === 'dashboard' && (
         <>
-          {loading && !dashboard && (
+          {dashLoading && !dashboard && (
             <div className="flex items-center gap-2 text-surface-400 text-sm">
               <Loader2 size={16} className="animate-spin-slow" /> Загрузка дашборда…
             </div>
@@ -230,7 +246,7 @@ export default function AnalyticsPage() {
             <p className="text-sm text-surface-400">
               Автоматический анализ комбинаций «материал × процесс × география» из графа знаний.
             </p>
-            <button type="button" className="btn-secondary text-xs flex items-center gap-1" disabled={loading}
+            <button type="button" className="btn-secondary text-xs flex items-center gap-1" disabled={gapsLoading}
               onClick={() => runGaps({ auto: true })}>
               <RefreshCw size={12} /> Обновить
             </button>
@@ -238,14 +254,17 @@ export default function AnalyticsPage() {
           {gapPresets.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {gapPresets.map((p, idx) => (
-                <button key={p.label || idx} type="button" className="btn-secondary text-xs" disabled={loading}
+                <button key={p.label || idx} type="button" className="btn-secondary text-xs" disabled={gapsLoading}
                   onClick={() => runGaps(p)}>
                   {p.label || 'Сценарий'}
                 </button>
               ))}
             </div>
           )}
-          {loading && <Loader2 className="animate-spin-slow text-brand-600" />}
+          {gapsLoading && <Loader2 className="animate-spin-slow text-brand-600" />}
+          {!gapsLoading && gaps && !(gaps.ontology_gaps?.length) && (
+            <p className="text-sm text-surface-400">Сценарии не найдены — загрузите документы с процессами и материалами.</p>
+          )}
           {gaps && (
             <div className="card p-5 space-y-3">
               <p className="text-xs text-surface-500">
@@ -279,8 +298,8 @@ export default function AnalyticsPage() {
         <form onSubmit={runRecommendations} className="card p-4 flex gap-3">
           <input className="input flex-1" value={topic} onChange={e => setTopic(e.target.value)}
             placeholder="Тема: электроэкстракция никеля…" />
-          <button type="submit" className="btn-primary shrink-0" disabled={loading}>
-            {loading ? <Loader2 size={14} className="animate-spin-slow" /> : 'Найти'}
+          <button type="submit" className="btn-primary shrink-0" disabled={recsLoading}>
+            {recsLoading ? <Loader2 size={14} className="animate-spin-slow" /> : 'Найти'}
           </button>
         </form>
       )}
@@ -325,8 +344,8 @@ export default function AnalyticsPage() {
         <form onSubmit={runPractices} className="card p-4 flex gap-3">
           <input className="input flex-1" value={topic} onChange={e => setTopic(e.target.value)}
             placeholder="Тема для сравнения практик…" />
-          <button type="submit" className="btn-primary shrink-0" disabled={loading}>
-            {loading ? <Loader2 size={14} className="animate-spin-slow" /> : 'Сравнить'}
+          <button type="submit" className="btn-primary shrink-0" disabled={practicesLoading}>
+            {practicesLoading ? <Loader2 size={14} className="animate-spin-slow" /> : 'Сравнить'}
           </button>
         </form>
       )}
@@ -377,8 +396,8 @@ export default function AnalyticsPage() {
         <form onSubmit={runReview} className="card p-4 flex gap-3">
           <input className="input flex-1" value={topic} onChange={e => setTopic(e.target.value)}
             placeholder="Тема литобзора…" />
-          <button type="submit" className="btn-primary shrink-0" disabled={loading}>
-            {loading ? <Loader2 size={14} className="animate-spin-slow" /> : <Sparkles size={14} />}
+          <button type="submit" className="btn-primary shrink-0" disabled={actionLoading}>
+            {actionLoading ? <Loader2 size={14} className="animate-spin-slow" /> : <Sparkles size={14} />}
             Сгенерировать
           </button>
         </form>
@@ -431,7 +450,7 @@ export default function AnalyticsPage() {
         <form onSubmit={runCompare} className="card p-4 space-y-3">
           <label className="label">Технологии (через запятую)</label>
           <input className="input" value={techs} onChange={e => setTechs(e.target.value)} />
-          <button type="submit" className="btn-primary" disabled={loading}>Сравнить</button>
+          <button type="submit" className="btn-primary" disabled={actionLoading}>Сравнить</button>
         </form>
       )}
 

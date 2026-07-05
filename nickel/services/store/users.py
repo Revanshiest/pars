@@ -14,8 +14,8 @@ from services.api_key_crypto import key_hint, keys_match, storage_value
 ROLES = ["researcher", "analyst", "project_manager", "admin", "external_partner"]
 
 ROLE_PERMISSIONS: Dict[str, List[str]] = {
-    "researcher": ["read", "search", "upload", "subscribe", "glossary_read", "dashboard"],
-    "analyst": ["read", "search", "upload", "verify", "edit_graph", "export", "subscribe", "glossary_read", "glossary_write", "synthesis", "dashboard"],
+    "researcher": ["read", "search", "upload", "subscribe", "glossary_read", "dashboard", "compare"],
+    "analyst": ["read", "search", "upload", "verify", "edit_graph", "export", "subscribe", "glossary_read", "glossary_write", "synthesis", "dashboard", "compare"],
     "project_manager": ["read", "search", "upload", "verify", "edit_graph", "export", "dashboard", "compare", "subscribe", "glossary_read", "synthesis", "audit"],
     "admin": ["*"],
     "external_partner": ["read", "search", "glossary_read"],
